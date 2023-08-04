@@ -15,6 +15,7 @@ pip install optuna
 pip install wandb
 pip install alipy
 pip install sentence-transformers
+pip install openai
 ```
 
 ## Download data (Nemo)

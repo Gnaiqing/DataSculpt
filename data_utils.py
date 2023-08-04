@@ -145,10 +145,13 @@ def load_local_data(data_root, dataset_name, feature, test_ratio=0.1, valid_rati
     xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr = xs_text_tr[train_idxs], xs_token_tr[train_idxs], xs_feature_tr[
         train_idxs], ys_tr[train_idxs]
 
-    train_dataset = TextDataset(xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr, vocab)
-    valid_dataset = TextDataset(xs_text_val, xs_token_val, xs_feature_val, ys_val, vocab, classes=train_dataset.classes)
-    test_dataset = TextDataset(xs_text_te, xs_token_te, xs_feature_te, ys_te, vocab, classes=train_dataset.classes)
-    warmup_dataset = TextDataset(xs_text_wu, xs_token_wu, xs_feature_wu, ys_wu, vocab, classes=train_dataset.classes)
+    train_dataset = TextDataset(xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr, vocab, dataset_name=dataset_name)
+    valid_dataset = TextDataset(xs_text_val, xs_token_val, xs_feature_val, ys_val, vocab,
+                                classes=train_dataset.classes, dataset_name=dataset_name)
+    test_dataset = TextDataset(xs_text_te, xs_token_te, xs_feature_te, ys_te, vocab,
+                               classes=train_dataset.classes, dataset_name=dataset_name)
+    warmup_dataset = TextDataset(xs_text_wu, xs_token_wu, xs_feature_wu, ys_wu, vocab,
+                                 classes=train_dataset.classes, dataset_name=dataset_name)
     train_dataset.convert_neg_zero_label()
     valid_dataset.convert_neg_zero_label()
     test_dataset.convert_neg_zero_label()
@@ -342,13 +345,13 @@ def load_hub_data(dataset_path, dataset_name, feature, test_ratio=0.1, valid_rat
              xs_text_2_tr[train_idxs], xs_token_2_tr[train_idxs], xs_feature_2_tr[train_idxs])
 
         train_dataset = TextPairDataset(xs_text_tr, xs_token_tr, xs_feature_tr,xs_text_2_tr, xs_token_2_tr,
-                                        xs_feature_2_tr, ys_tr, vocab)
+                                        xs_feature_2_tr, ys_tr, vocab, dataset_name=dataset_name)
         valid_dataset = TextPairDataset(xs_text_val, xs_token_val, xs_feature_val, xs_text_2_val, xs_token_2_val,
-                                        xs_feature_2_val, ys_val, vocab, classes=train_dataset.classes)
+                                        xs_feature_2_val, ys_val, vocab, classes=train_dataset.classes, dataset_name=dataset_name)
         test_dataset = TextPairDataset(xs_text_te, xs_token_te, xs_feature_te, xs_text_2_te, xs_token_2_te,
-                                       xs_feature_2_te, ys_te, vocab, classes=train_dataset.classes)
+                                       xs_feature_2_te, ys_te, vocab, classes=train_dataset.classes, dataset_name=dataset_name)
         warmup_dataset = TextPairDataset(xs_text_wu, xs_token_wu, xs_feature_wu, xs_text_2_wu, xs_token_2_wu,
-                                         xs_feature_2_wu, ys_wu, vocab, classes=train_dataset.classes)
+                                         xs_feature_2_wu, ys_wu, vocab, classes=train_dataset.classes, dataset_name=dataset_name)
 
 
     else:
@@ -357,17 +360,21 @@ def load_hub_data(dataset_path, dataset_name, feature, test_ratio=0.1, valid_rat
         xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr = xs_text_tr[train_idxs], xs_token_tr[train_idxs], xs_feature_tr[
             train_idxs], ys_tr[train_idxs]
 
-        train_dataset = TextDataset(xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr, vocab)
-        valid_dataset = TextDataset(xs_text_val, xs_token_val, xs_feature_val, ys_val, vocab, classes=train_dataset.classes)
-        test_dataset = TextDataset(xs_text_te, xs_token_te, xs_feature_te, ys_te, vocab, classes=train_dataset.classes)
-        warmup_dataset = TextDataset(xs_text_wu, xs_token_wu, xs_feature_wu, ys_wu, vocab, classes=train_dataset.classes)
+        train_dataset = TextDataset(xs_text_tr, xs_token_tr, xs_feature_tr, ys_tr, vocab, dataset_name=dataset_name)
+        valid_dataset = TextDataset(xs_text_val, xs_token_val, xs_feature_val, ys_val, vocab,
+                                    classes=train_dataset.classes, dataset_name=dataset_name)
+        test_dataset = TextDataset(xs_text_te, xs_token_te, xs_feature_te, ys_te, vocab,
+                                   classes=train_dataset.classes, dataset_name=dataset_name)
+        warmup_dataset = TextDataset(xs_text_wu, xs_token_wu, xs_feature_wu, ys_wu, vocab,
+                                     classes=train_dataset.classes, dataset_name=dataset_name)
 
     return train_dataset, valid_dataset, test_dataset, warmup_dataset
 
 
 class TextDataset:
-    def __init__(self, xs_text, xs_token, xs_feature, ys, vocab, classes=None):
+    def __init__(self, xs_text, xs_token, xs_feature, ys, vocab, classes=None, dataset_name=None):
         assert np.all(np.array([len(xs_text), len(xs_token), len(xs_feature)]) == len(ys))
+        self.dataset_name = dataset_name
         self.xs_text = xs_text
         self.xs_token = xs_token
         self.xs_feature = xs_feature
@@ -400,7 +407,6 @@ class TextDataset:
         item = {
             "sentence": self.xs_text[idx],
             "token": self.xs_token[idx],
-            "feature": self.xs_feature[idx],
             "idx": idx,
             "label": self.ys[idx]
         }
@@ -426,8 +432,10 @@ class TextDataset:
 
 
 class TextPairDataset(TextDataset):
-    def __init__(self, xs_text_1, xs_token_1, xs_feature_1, xs_text_2, xs_token_2, xs_feature_2, ys, vocab, classes=None):
-        super(TextPairDataset, self).__init__(xs_text_1, xs_token_1, xs_feature_1, ys, vocab, classes=classes)
+    def __init__(self, xs_text_1, xs_token_1, xs_feature_1, xs_text_2, xs_token_2, xs_feature_2, ys, vocab, classes=None,
+                 dataset_name=None):
+        super(TextPairDataset, self).__init__(xs_text_1, xs_token_1, xs_feature_1, ys, vocab,
+                                              classes=classes, dataset_name=dataset_name)
         assert np.all(np.array([len(xs_text_2), len(xs_token_2), len(xs_feature_2)]) == len(ys))
         self.xs_text_2 = xs_text_2
         self.xs_token_2 = xs_token_2
@@ -448,10 +456,8 @@ class TextPairDataset(TextDataset):
             "sentence": self.xs_text[idx] + " [SEP] "+ self.xs_text_2[idx],   # for ease of printing
             "sentence1": self.xs_text[idx],
             "token1": self.xs_token[idx],
-            "feature1": self.xs_feature[idx],
             "sentence2": self.xs_text_2[idx],
             "token2": self.xs_token_2[idx],
-            "feature2": self.xs_feature_2[idx],
             "idx": idx,
             "label": self.ys[idx]
         }

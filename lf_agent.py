@@ -3,14 +3,66 @@ import numpy as np
 import os
 from numpy.random import default_rng
 from lf_family import KeywordLF
+import openai
 from data_utils import TextDataset, TextPairDataset
-
+from gpt_utils import get_system_prompt
+import nltk
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
     if agent_type == "simulated":
         return SimLFAgent(train_dataset, valid_dataset, **kwargs)
+    elif agent_type == "chatgpt":
+        return ChatGPTLFAgent(train_dataset, valid_dataset, **kwargs)
     else:
         raise ValueError("LF agent not supported.")
+
+
+
+def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
+                         acc_threshold, sentiment_lexicon, prev_lfs):
+    """
+    Filter a subset of candidate lfs that can be added given previous LFs
+
+    :param candidate_lfs: candidate LFs for the current iteration
+    :param filter_methods: methods for filtering
+    :param valid_dataset: validation dataset for estimating LF accuracy
+    :param acc_threshold: accuracy threshold for accuracy filter
+    :param sentiment_lexicon: sentiment lexicons for sentiment filter
+    :param prev_lfs: LFs designed in previous iterations for redundance filter
+    :return: filtered_lfs: a subset of candidate LFs
+    """
+    mask = np.repeat(True, len(candidate_lfs))
+
+    if "acc" in filter_methods:
+        for j, lf in enumerate(candidate_lfs):
+            if not mask[j]:
+                continue
+            cov, acc = lf.get_cov_acc(valid_dataset)
+            if np.isnan(acc) or acc < acc_threshold:
+                mask[j] = False
+
+    if "sentiment" in filter_methods:
+        for j, lf in enumerate(candidate_lfs):
+            if not mask[j]:
+                continue
+            if lf.label == 0:
+                tokens = sentiment_lexicon.neg_tokens
+            else:
+                tokens = sentiment_lexicon.pos_tokens
+            if lf.keyword not in tokens:
+                mask[j] = False
+
+    if "unique" in filter_methods:
+        for j, lf in enumerate(candidate_lfs):
+            if not mask[j]:
+                continue
+            for prev_lf in prev_lfs:
+                if lf == prev_lf:
+                    mask[j] = False
+                    break
+
+    filtered_lfs = np.array(candidate_lfs)[mask]
+    return filtered_lfs
 
 
 class SentimentLexicon:
@@ -54,6 +106,77 @@ class SentimentLexicon:
         return tokens
 
 
+class ChatGPTLFAgent:
+    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
+                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",**kwargs):
+        """
+        LF Agent using ChatGPT
+        :param train_dataset:
+        :param valid_dataset:
+        :param lf_type:
+        :param filter_methods:
+        :param acc_threshold:
+        :param data_root:
+        :param seed:
+        :param kwargs:
+        """
+        self.train_dataset = train_dataset
+        self.valid_dataset = valid_dataset
+        self.lf_type = lf_type
+        self.filter_methods = filter_methods
+        self.sentiment_lexicon = SentimentLexicon(data_root)
+        self.lfs = list()  # history LFs
+        self.acc_threshold = acc_threshold
+        self.rng = default_rng(seed)
+        self.model = model
+        self.kwargs = kwargs
+        openai.api_key_path = api_key_path
+
+    def create_lf(self, query_idx):
+        item = self.train_dataset[query_idx]
+        candidate_lfs = []
+        if self.lf_type == "keyword":
+            system_prompt = get_system_prompt(self.train_dataset.dataset_name)
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": item["sentence"]}
+            ]
+            response = openai.ChatCompletion.create(
+                model=self.model,
+                messages = messages
+            )
+            response_content = response['choices'][0]["message"]["content"]
+            response_tokens = nltk.word_tokenize(response_content)
+            if "LABEL" not in response_tokens or "KEYWORDS" not in response_tokens:
+                return None
+
+            label_idx = response_tokens.index("LABEL") + 2
+            label = int(response_tokens[label_idx])
+            keyword_idx = response_tokens.index("KEYWORDS") + 2
+            for idx in np.arange(len(response_tokens)-keyword_idx) + keyword_idx:
+                keyword = response_tokens[idx]
+                if keyword in item["token"]:
+                    lf = KeywordLF(keyword=keyword, label=label)
+                    candidate_lfs.append(lf)
+
+        else:
+            raise ValueError ("LF Type not supported.")
+
+        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,
+                                            self.acc_threshold, self.sentiment_lexicon, self.lfs)
+
+        if len(filtered_lfs) > 0:
+            lf = self.rng.choice(filtered_lfs)
+            self.lfs.append(lf)
+        else:
+            lf = None
+
+        return lf
+
+
+
+
+
 class SimLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique", "consist"),
                  acc_threshold=0.6, data_root="./data", seed=0, **kwargs):
@@ -76,59 +199,25 @@ class SimLFAgent:
         self.valid_dataset = valid_dataset
         self.lf_type = lf_type
         self.filter_methods = filter_methods
-        if "sentiment" in self.filter_methods:
-            self.sentiment_lexicon = SentimentLexicon(data_root)
-
+        self.sentiment_lexicon = SentimentLexicon(data_root)
         self.lfs = list() # history LFs
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
 
     def create_lf(self, query_idx):
         item = self.train_dataset[query_idx]
+        label = item["label"]
         candidate_lfs = []
         if self.lf_type == "keyword":
-            for label in self.train_dataset.classes:
-                for token in item["token"]:
-                    lf = KeywordLF(keyword=token, label=label)
-                    candidate_lfs.append(lf)
+            for token in item["token"]:
+                lf = KeywordLF(keyword=token, label=label)
+                candidate_lfs.append(lf)
         else:
             raise ValueError ("LF Type not supported.")
 
-        mask = np.repeat(True, len(candidate_lfs))
-        if "consist" in self.filter_methods:
-            for j, lf in enumerate(candidate_lfs):
-                if lf.label != item["label"]:
-                    mask[j] = False
+        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,self.acc_threshold,
+                                            self.sentiment_lexicon, self.lfs)
 
-        if "acc" in self.filter_methods:
-            for j, lf in enumerate(candidate_lfs):
-                if not mask[j]:
-                    continue
-                cov, acc = lf.get_cov_acc(self.train_dataset)
-                if acc < self.acc_threshold:
-                    mask[j] = False
-
-        if "sentiment" in self.filter_methods:
-            for j, lf in enumerate(candidate_lfs):
-                if not mask[j]:
-                    continue
-                if lf.label == 0:
-                    tokens = self.sentiment_lexicon.neg_tokens
-                else:
-                    tokens = self.sentiment_lexicon.pos_tokens
-                if lf.keyword not in tokens:
-                    mask[j] = False
-
-        if "unique" in self.filter_methods:
-            for j, lf in enumerate(candidate_lfs):
-                if not mask[j]:
-                    continue
-                for prev_lf in self.lfs:
-                    if lf == prev_lf:
-                        mask[j] = False
-                        break
-
-        filtered_lfs = np.array(candidate_lfs)[mask]
         if len(filtered_lfs) > 0:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)

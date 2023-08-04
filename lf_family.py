@@ -36,6 +36,9 @@ class KeywordLF:
 
     def get_cov_acc(self, dataset:TextDataset):
         active_indices = self.get_active_indices(dataset)
+        if len(active_indices) == 0:
+            return 0.0, np.nan
+
         ys = dataset.ys[active_indices]
         if -1 in ys:
             # the dataset has missing ground-truth labels
@@ -60,9 +63,9 @@ def apply_lfs(lfs, dataset):
     return weak_labels
 
 
-def check_all_class(lfs, cardinality):
+def check_all_class(ys, cardinality):
     mask = np.repeat(False, cardinality)
-    for lf in lfs:
-        mask[lf.label] = True
+    for label in ys:
+        mask[label] = True
 
     return np.all(mask)

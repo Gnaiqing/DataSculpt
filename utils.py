@@ -34,13 +34,3 @@ def append_history(history, example, lf):
 def save_results(results, save_path):
     df = pd.DataFrame(results)
     df.to_csv(save_path)
-
-
-def create_tag(args):
-    tag = ""
-    dict = vars(args)
-    for key in dict:
-        tag += f"{key}={dict[key]}_"
-
-    tag.replace("/", "_")
-    return tag
