@@ -5,8 +5,10 @@ from numpy.random import default_rng
 from lf_family import KeywordLF
 import openai
 from data_utils import TextDataset, TextPairDataset
+from transformers import AutoTokenizer,LlamaForCausalLM
 from gpt_utils import get_system_prompt
 import nltk
+import torch
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
     if agent_type == "simulated":
@@ -175,6 +177,80 @@ class ChatGPTLFAgent:
 
 
 
+
+
+class Llama2LFAgent:
+    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
+                 acc_threshold=0.6, data_root="./data", seed=0, model="",dtype=torch.bfloat16,**kwargs):
+        """
+        LF Agent using Llama2
+        :param train_dataset:
+        :param valid_dataset:
+        :param lf_type:
+        :param filter_methods:
+        :param acc_threshold:
+        :param data_root:
+        :param seed:
+        :param kwargs:
+        """
+        self.train_dataset = train_dataset
+        self.valid_dataset = valid_dataset
+        self.lf_type = lf_type
+        self.filter_methods = filter_methods
+        self.sentiment_lexicon = SentimentLexicon(data_root)
+        self.lfs = list()  # history LFs
+        self.acc_threshold = acc_threshold
+        self.rng = default_rng(seed)
+        self.tokenizer = AutoTokenizer.from_pretrained(model,  local_files_only=True)
+        self.model = LlamaForCausalLM.from_pretrained(model, local_files_only=True,torch_dtype=dtype)
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.kwargs = kwargs
+
+    def create_lf(self, query_idx):
+          def predict(prompt, n=1,total_tokens=4096,temperature=0.75,top_p=1.0,repetition_penalty=1) -> List[str]:
+                input_text = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+                with torch.no_grad():
+                      outputs = self.model.generate(
+                      input_text,
+                      num_return_sequences=n,
+                      max_length=total_tokens,
+                      do_sample=True,
+                      temperature=temperature,
+                      top_p=top_p,
+                      repetition_penalty=repetition_penalty)
+                out = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                return out
+        item = self.train_dataset[query_idx]
+        candidate_lfs = []
+        if self.lf_type == "keyword":
+            system_prompt = get_system_prompt(self.train_dataset.dataset_name)
+            full_prompt = system_prompt + "\n" + item["sentence"]
+            response_content = predict(full_prompt)[0]
+            response_tokens = nltk.word_tokenize(response_content)
+            if "LABEL" not in response_tokens or "KEYWORDS" not in response_tokens:
+                return None
+            label_idx = response_tokens.index("LABEL") + 2
+            label = int(response_tokens[label_idx])
+            keyword_idx = response_tokens.index("KEYWORDS") + 2
+            for idx in np.arange(len(response_tokens)-keyword_idx) + keyword_idx:
+                keyword = response_tokens[idx]
+                if keyword in item["token"]:
+                    lf = KeywordLF(keyword=keyword, label=label)
+                    candidate_lfs.append(lf)
+
+        else:
+            raise ValueError ("LF Type not supported.")
+
+        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,
+                                            self.acc_threshold, self.sentiment_lexicon, self.lfs)
+
+        if len(filtered_lfs) > 0:
+            lf = self.rng.choice(filtered_lfs)
+            self.lfs.append(lf)
+        else:
+            lf = None
+
+        return lf
 
 
 class SimLFAgent:
