@@ -65,6 +65,34 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
     return filtered_lfs
 
 
+def extract_label_keywords(content, cardinality=2):
+    """
+    Extract label and keywords from contents returned by LLMs
+    :param content: returned contents
+    :return: label, keyword_list
+    """
+    tokens = nltk.word_tokenize(content)
+    classes = range(cardinality)
+    if "LABEL" not in tokens or "KEYWORDS" not in tokens:
+        return None, None
+
+    label_idx = tokens.index("LABEL") + 2
+    if label_idx < len(tokens) and tokens[label_idx].isdigit() and int(tokens[label_idx]) in classes:
+        label = int(tokens[label_idx])
+    else:
+        return None, None
+
+    keyword_idx = tokens.index("KEYWORDS") + 2
+    keyword_list = []
+    for idx in np.arange(len(tokens) - keyword_idx) + keyword_idx:
+        keyword = tokens[idx]
+        if keyword != "NA":
+            keyword_list.append(keyword)
+
+    return label, keyword_list
+
+
+
 class SentimentLexicon:
     def __init__(self, data_root):
         pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
@@ -108,7 +136,8 @@ class SentimentLexicon:
 
 class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
-                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",**kwargs):
+                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",
+                 display=True, repeats=1, **kwargs):
         """
         LF Agent using ChatGPT
         :param train_dataset:
@@ -129,6 +158,8 @@ class ChatGPTLFAgent:
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
         self.model = model
+        self.display = display
+        self.repeats = repeats
         self.kwargs = kwargs
         openai.api_key_path = api_key_path
 
@@ -141,23 +172,24 @@ class ChatGPTLFAgent:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": item["sentence"]}
             ]
-            response = openai.ChatCompletion.create(
-                model=self.model,
-                messages = messages
-            )
-            response_content = response['choices'][0]["message"]["content"]
-            response_tokens = nltk.word_tokenize(response_content)
-            if "LABEL" not in response_tokens or "KEYWORDS" not in response_tokens:
-                return None
+            for i in range(self.repeats): # try multiple times if first attempt fails
+                response = openai.ChatCompletion.create(
+                    model=self.model,
+                    messages = messages
+                )
+                response_content = response['choices'][0]["message"]["content"]
+                if self.display:
+                    print("Response: ", response_content)
 
-            label_idx = response_tokens.index("LABEL") + 2
-            label = int(response_tokens[label_idx])
-            keyword_idx = response_tokens.index("KEYWORDS") + 2
-            for idx in np.arange(len(response_tokens)-keyword_idx) + keyword_idx:
-                keyword = response_tokens[idx]
-                if keyword in item["token"]:
-                    lf = KeywordLF(keyword=keyword, label=label)
-                    candidate_lfs.append(lf)
+                label, keyword_list = extract_label_keywords(response_content, self.train_dataset.n_class)
+                if label is not None:
+                    break
+
+            if label is not None:
+                for keyword in keyword_list:
+                    if keyword in item["token"]:
+                        lf = KeywordLF(keyword=keyword, label=label)
+                        candidate_lfs.append(lf)
 
         else:
             raise ValueError ("LF Type not supported.")
