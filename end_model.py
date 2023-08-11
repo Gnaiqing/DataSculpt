@@ -53,7 +53,10 @@ def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, valid_dataset, w
         ys_tr = ys_warmup
     else:
         xs_tr = np.vstack((xs_tr, warmup_dataset.xs_feature))
-        ys_tr = np.hstack((ys_tr, ys_warmup))
+        if soft_training:
+            ys_tr = np.vstack((ys_tr, ys_warmup))
+        else:
+            ys_tr = np.hstack((ys_tr, ys_warmup))
 
     sample_weights = None
     disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, sample_weights)

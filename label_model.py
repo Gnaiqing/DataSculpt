@@ -69,7 +69,7 @@ class Snorkel:
         study = optuna.create_study(sampler=optuna.samplers.GridSampler(search_space), direction='minimize')
         study.optimize(objective, n_trials=self.n_trials)
         self.best_params = study.best_params
-        self.model = LabelModel(cardinality=self.cardinality)
+        self.model = LabelModel(cardinality=self.cardinality,verbose=False)
         self.model.fit(L_train=L_tr, Y_dev=ys_val, **self.best_params, seed=self.seed, progress_bar=False)
 
     def predict_proba(self, L):
