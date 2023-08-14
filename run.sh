@@ -5,7 +5,7 @@ model_size=$4
 
 model_path=./$model-$model_size
 echo $model_path
-python main.py --dataset-path $data_path --dataset-name $data_name --lf-agent $model --lf-llm-model $model_path
+python main.py --dataset-path $data_path --dataset-name $data_name --lf-agent $model --lf-llm-model $model_path -save-wandb --use-soft-labels
 
 #    parser.add_argument("--dataset-path", type=str, default="glue", help="dataset path (or benchmark name)")
 #     parser.add_argument("--dataset-name", type=str, default="sst2", help="dataset name")

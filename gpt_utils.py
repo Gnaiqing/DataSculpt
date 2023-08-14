@@ -39,7 +39,7 @@ prompt_map = {
         The label functions are composed of a keyword and a label (0 for negative, 1 for positive), such that when the keyword
         is indicative of the corresponding label. When the user provides a sentence, first provides the label for that 
         sentence, then provide a set of keywords occurred in the sentence that helps making predictions. Each keyword must 
-        be a single word in the sentence. When no keywords are indicative of the label, return NA for keywords.
+        be a single word in the sentence. 
         Example:
         User: 
         I went and saw this movie last night after being coaxed to by a few friends of mine. 
