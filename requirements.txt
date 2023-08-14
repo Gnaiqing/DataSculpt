@@ -1,0 +1,10 @@
+torch
+torchvision
+torchaudio
+transformers[sentencepiece]
+datasets
+snorkel
+optuna
+wandb
+alipy
+sentence-transformers

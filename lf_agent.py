@@ -15,6 +15,8 @@ def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
         return SimLFAgent(train_dataset, valid_dataset, **kwargs)
     elif agent_type == "chatgpt":
         return ChatGPTLFAgent(train_dataset, valid_dataset, **kwargs)
+    elif agent_type == "llama2":
+        return Llama2LFAgent(train_dataset, valid_dataset, **kwargs)
     else:
         raise ValueError("LF agent not supported.")
 
@@ -201,25 +203,29 @@ class Llama2LFAgent:
         self.lfs = list()  # history LFs
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
+        print(model)
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.tokenizer = AutoTokenizer.from_pretrained(model,  local_files_only=True)
         self.model = LlamaForCausalLM.from_pretrained(model, local_files_only=True,torch_dtype=dtype)
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.model.to(self.device)
         self.kwargs = kwargs
 
     def create_lf(self, query_idx):
-          def predict(prompt, n=1,total_tokens=4096,temperature=0.75,top_p=1.0,repetition_penalty=1) -> List[str]:
-                input_text = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
-                with torch.no_grad():
-                      outputs = self.model.generate(
-                      input_text,
-                      num_return_sequences=n,
-                      max_length=total_tokens,
-                      do_sample=True,
-                      temperature=temperature,
-                      top_p=top_p,
-                      repetition_penalty=repetition_penalty)
-                out = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-                return out
+        def predict(prompt, n=1,total_tokens=4096,temperature=0.75,top_p=1.0,repetition_penalty=1):
+            input_text = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+            with torch.no_grad():
+                  outputs = self.model.generate(
+                  input_text,
+                  num_return_sequences=n,
+                  max_length=total_tokens,
+                  do_sample=True,
+                  temperature=temperature,
+                  top_p=top_p,
+                  repetition_penalty=repetition_penalty)
+            out = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            start_idx = len(prompt)
+            out = [i[start_idx:] for i in out]
+            return out
         item = self.train_dataset[query_idx]
         candidate_lfs = []
         if self.lf_type == "keyword":
