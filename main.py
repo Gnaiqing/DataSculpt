@@ -50,7 +50,8 @@ def main(args):
 
         seed = rng.choice(10000)
         sampler = get_sampler(train_dataset=train_dataset,
-                              sampler_type=args.sampler
+                              sampler_type=args.sampler,
+                              seed=seed
                               )
         lf_agent = get_lf_agent(train_dataset=train_dataset,
                                 valid_dataset=valid_dataset,
@@ -114,6 +115,7 @@ def main(args):
                     ys_tr_soft = label_model.predict_proba(L_train)
                     covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1) # indices covered by LFs
                     xs_tr = train_dataset.xs_feature[covered_indices, :]
+                    xs_u = train_dataset.xs_feature[~covered_indices, :]
                     ys_tr = ys_tr[covered_indices]
                     ys_tr_soft = ys_tr_soft[covered_indices, :]
                     # evaluate label quality
@@ -126,9 +128,11 @@ def main(args):
                                                       xs_tr=xs_tr,
                                                       ys_tr_soft=ys_tr_soft,
                                                       ys_tr_hard=ys_tr,
+                                                      xs_u=xs_u,
                                                       valid_dataset=valid_dataset,
                                                       warmup_dataset=warmup_dataset,
                                                       soft_training=args.use_soft_labels,
+                                                      ssl_method=args.ssl_method,
                                                       seed=seed)
                         # evaluate end model performance
                         test_perf = evaluate_disc_model(disc_model, test_dataset)
@@ -211,6 +215,7 @@ if __name__ == '__main__':
     parser.add_argument("--label-model", type=str, default="snorkel", help="label model used in DP paradigm")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
+    parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])
     # label function
     parser.add_argument("--lf-agent", type=str, default="simulated", help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", help="LF family")

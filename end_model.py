@@ -1,13 +1,18 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.utils import shuffle
+from sklearn.semi_supervised import LabelSpreading, LabelPropagation, SelfTrainingClassifier
 import optuna
 import pdb
 
 
-def get_discriminator(model_type, prob_labels, params=None, seed=None):
+def get_discriminator(model_type, prob_labels, params=None, seed=None, ssl_method=None):
     if model_type == 'logistic':
-        return LogReg(prob_labels, params, seed)
+        if ssl_method is None:
+            return LogReg(prob_labels, params, seed)
+        else:
+            return LogRegSSL(params, seed)
     else:
         raise ValueError('discriminator model not supported.')
 
@@ -34,9 +39,10 @@ def evaluate_disc_model(disc_model, test_dataset):
     }
     return results
 
-def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, valid_dataset, warmup_dataset, soft_training, seed):
+def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, warmup_dataset, soft_training,
+                     ssl_method, seed):
     # prepare discriminator
-    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed)
+    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method)
 
     if soft_training:
         # ys_tr = ys_tr_soft[:, 1]
@@ -58,9 +64,13 @@ def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, valid_dataset, w
         else:
             ys_tr = np.hstack((ys_tr, ys_warmup))
 
-    sample_weights = None
-    disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, sample_weights)
-    disc_model.fit(xs_tr, ys_tr, sample_weights)
+    if ssl_method is None:
+        sample_weights = None
+        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, sample_weights)
+        disc_model.fit(xs_tr, ys_tr, sample_weights)
+    else:
+        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, xs_u)
+        disc_model.fit(xs_tr, ys_tr, xs_u)
 
     return disc_model
 
@@ -84,6 +94,7 @@ class LogReg(Classifier):
         self.prob_labels = prob_labels
         self.model = None
         self.best_params = None
+
         if params is None:
             params = {
                 'solver': ['liblinear'],
@@ -118,10 +129,8 @@ class LogReg(Classifier):
 
         def objective(trial):
             suggestions = {key: trial.suggest_categorical(key, search_space[key]) for key in search_space}
-
             model = LogisticRegression(**suggestions, random_state=self.seed)
             model.fit(x_train, y_train, sample_weights)
-
             ys_pred = model.predict(x_valid)
 
             if scoring == 'acc':
@@ -155,6 +164,83 @@ class LogReg(Classifier):
         if self.best_params is not None:
             model = LogisticRegression(**self.best_params, random_state=self.seed)
             model.fit(xs, ys, sample_weight=sample_weights)
+            self.model = model
+        else:
+            raise ValueError('Should perform hyperparameter tuning before fitting')
+
+    def predict(self, xs):
+        return self.model.predict(xs)
+
+    def predict_proba(self, xs):
+        return self.model.predict_proba(xs)
+
+
+class LogRegSSL(Classifier):
+    """
+    Apply self training for semi-supervised learning
+    """
+    def __init__(self, params=None, seed=None):
+        self.model = None
+        self.best_params = None
+
+        if params is None:
+            params = {
+                'LogReg': {
+                    'solver': ['liblinear'],
+                    'max_iter': [1000],
+                    'C': [0.001, 0.01, 0.1, 1, 10, 100],
+                },
+                'SelfTraining': {
+                    'threshold': [0.65, 0.70, 0.75, 0.80, 0.85, 0.90],
+                }
+            }
+        self.params = params
+        self.n_trials = 50
+        if seed is None:
+            self.seed = np.random.randint(1e6)
+        else:
+            self.seed = seed
+
+    def tune_params(self, x_train, y_train, x_valid, y_valid, x_unlabeled, scoring='acc'):
+        search_space = {}
+        for key in self.params:
+            search_space = {**search_space, **self.params[key]}
+
+        x_train = np.vstack((x_train, x_unlabeled))
+        y_train = np.hstack((y_train, - np.ones(len(x_unlabeled))))
+        x_train, y_train = shuffle(x_train, y_train)
+
+        def objective(trial):
+            logreg_suggestions = {key: trial.suggest_categorical(key, self.params['LogReg'][key]) for key in self.params['LogReg']}
+            base_model = LogisticRegression(**logreg_suggestions, random_state=self.seed)
+            ssl_suggestions = {key: trial.suggest_categorical(key, self.params['SelfTraining'][key]) for key in self.params['SelfTraining']}
+            model = SelfTrainingClassifier(base_model, **ssl_suggestions)
+            model.fit(x_train, y_train)
+            ys_pred = model.predict(x_valid)
+
+            if scoring == 'acc':
+                val_score = accuracy_score(y_valid, ys_pred)
+            elif scoring == 'f1':
+                val_score = f1_score(y_valid, ys_pred)
+
+            return val_score
+
+        study = optuna.create_study(sampler=optuna.samplers.GridSampler(search_space), direction='maximize')
+        study.optimize(objective, n_trials=self.n_trials)
+
+        self.best_params = study.best_params
+
+    def fit(self, xs, ys, xu):
+        x_train = np.vstack((xs, xu))
+        y_train = np.hstack((ys, - np.ones(len(xu))))
+        x_train, y_train = shuffle(x_train, y_train)
+        logreg_params = {key : self.best_params[key] for key in ['solver', 'max_iter', 'C']}
+        self_training_params = {key: self.best_params[key] for key in ['threshold']}
+        if self.best_params is not None:
+            base_model = LogisticRegression(**logreg_params, random_state=self.seed)
+            model = SelfTrainingClassifier(base_model, **self_training_params)
+
+            model.fit(x_train, y_train)
             self.model = model
         else:
             raise ValueError('Should perform hyperparameter tuning before fitting')

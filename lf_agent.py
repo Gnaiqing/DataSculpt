@@ -173,11 +173,15 @@ class ChatGPTLFAgent:
                 {"role": "user", "content": item["sentence"]}
             ]
             for i in range(self.repeats): # try multiple times if first attempt fails
-                response = openai.ChatCompletion.create(
-                    model=self.model,
-                    messages = messages
-                )
-                response_content = response['choices'][0]["message"]["content"]
+                try:
+                    response = openai.ChatCompletion.create(
+                        model=self.model,
+                        messages = messages
+                    )
+                    response_content = response['choices'][0]["message"]["content"]
+                except openai.error.OpenAIError:
+                    response_content = ""
+
                 if self.display:
                     print("Response: ", response_content)
 
