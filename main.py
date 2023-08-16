@@ -60,15 +60,19 @@ def main(args):
                                 filter_methods=args.lf_filter,
                                 acc_threshold=args.lf_acc_threshold,
                                 model=args.lf_llm_model,
+                                prompt_version=args.llm_prompt_version,
                                 seed=seed,
                                 )
         al_model = None
         lfs = []
         lf_accs = []
         lf_covs = []
+        gt_labels = []
+        response_labels = []
         results = {
             "num_query": [],
             "lf_num" : [],
+            "response_acc": [],
             "lf_acc_avg": [],
             "lf_cov_avg": [],
             "train_precision": [],
@@ -83,10 +87,14 @@ def main(args):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
                 print("Query: ", train_dataset[query_idx]["sentence"])
-            lf = lf_agent.create_lf(query_idx)
+            lf, pred = lf_agent.create_lf(query_idx)
             if lf is not None:
                 if args.display:
                     print("LF: ", lf.info())
+                    print("Ground truth: ", train_dataset[query_idx]["label"])
+
+                gt_labels.append(train_dataset[query_idx]["label"])
+                response_labels.append(lf.label)
                 lfs.append(lf)
                 lf_cov, lf_acc = lf.get_cov_acc(train_dataset)
                 lf_covs.append(lf_cov)
@@ -106,6 +114,12 @@ def main(args):
             else:
                 if args.display:
                     print("LF: None")
+                    print("Ground truth: ", train_dataset[query_idx]["label"])
+                gt_labels.append(train_dataset[query_idx]["label"])
+                if pred is not None:
+                    response_labels.append(pred)
+                else:
+                    response_labels.append(-1)
 
             history = append_history(history, train_dataset[query_idx], lf)
             if t % args.train_iter == args.train_iter - 1:
@@ -119,6 +133,7 @@ def main(args):
                     ys_tr = ys_tr[covered_indices]
                     ys_tr_soft = ys_tr_soft[covered_indices, :]
                     # evaluate label quality
+                    response_acc = accuracy_score(gt_labels, response_labels)
                     train_coverage = np.mean(covered_indices)
                     train_precision = accuracy_score(train_dataset.ys[covered_indices], ys_tr)
                     lf_acc_avg = np.mean(lf_accs)
@@ -144,6 +159,7 @@ def main(args):
                         "lf_num": len(lfs),
                         "lf_acc_avg": lf_acc_avg,
                         "lf_cov_avg": lf_cov_avg,
+                        "response_acc": response_acc,
                         "train_precision": train_precision,
                         "train_coverage": train_coverage,
                         "test_acc": test_perf["acc"],
@@ -166,11 +182,13 @@ def main(args):
                 else:
                     lf_acc_avg = np.mean(lf_accs)
                     lf_cov_avg = np.mean(lf_covs)
+                    response_acc = accuracy_score(gt_labels, response_labels)
                     cur_result = {
                         "num_query": t + 1,
                         "lf_num": len(lfs),
                         "lf_acc_avg": lf_acc_avg,
                         "lf_cov_avg": lf_cov_avg,
+                        "response_acc": response_acc,
                         "train_precision": np.nan,
                         "train_coverage": np.nan,
                         "test_acc": np.nan,
@@ -222,6 +240,7 @@ if __name__ == '__main__':
     parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for simulated agent")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.5, help="LF accuracy threshold for simulated agent")
     parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo")
+    parser.add_argument("--llm-prompt-version", type=str, default="v1", help="LLM prompt version")
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")

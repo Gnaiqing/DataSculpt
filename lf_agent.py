@@ -83,8 +83,12 @@ def extract_label_keywords(content, cardinality=2):
         return None, None
 
     keyword_idx = tokens.index("KEYWORDS") + 2
+    if "EXPLANATION" in tokens:
+        last_keyword_pos = tokens.index("EXPLANATION")
+    else:
+        last_keyword_pos = len(tokens)
     keyword_list = []
-    for idx in np.arange(len(tokens) - keyword_idx) + keyword_idx:
+    for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
         keyword = tokens[idx]
         if keyword != "NA":
             keyword_list.append(keyword)
@@ -137,7 +141,7 @@ class SentimentLexicon:
 class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
                  acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",
-                 display=True, repeats=1, **kwargs):
+                 display=True, repeats=1, prompt_version="v1", **kwargs):
         """
         LF Agent using ChatGPT
         :param train_dataset:
@@ -160,6 +164,7 @@ class ChatGPTLFAgent:
         self.model = model
         self.display = display
         self.repeats = repeats
+        self.prompt_version = prompt_version
         self.kwargs = kwargs
         openai.api_key_path = api_key_path
 
@@ -167,7 +172,7 @@ class ChatGPTLFAgent:
         item = self.train_dataset[query_idx]
         candidate_lfs = []
         if self.lf_type == "keyword":
-            system_prompt = get_system_prompt(self.train_dataset.dataset_name)
+            system_prompt = get_system_prompt(self.train_dataset.dataset_name, prompt_version=self.prompt_version)
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": item["sentence"]}
@@ -207,7 +212,7 @@ class ChatGPTLFAgent:
         else:
             lf = None
 
-        return lf
+        return lf, label
 
 
 
@@ -260,7 +265,7 @@ class SimLFAgent:
         else:
             lf = None
 
-        return lf
+        return lf, label
 
 
 
