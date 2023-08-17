@@ -9,16 +9,18 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.preprocessing import StandardScaler
 from sentence_transformers import SentenceTransformer
+import nltk
+import wrench.dataset
 from datasets import load_dataset
 import argparse
+from wrench.dataset import load_dataset, BaseDataset
 import pdb
-
-hub_data_paths = ["glue"]
 
 feature_name_dict = {
     "sst2": ("sentence",),
     "mrpc": ("sentence1", "sentence2")
 }
+
 
 def create_bert_vector(raw_texts, save_path):
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -26,6 +28,7 @@ def create_bert_vector(raw_texts, save_path):
     np.save(save_path, embeddings)
 
     return embeddings
+
 
 
 def tr_val_te_split(xs, ys, test_ratio, valid_ratio, rand_state):
@@ -44,6 +47,35 @@ def tr_val_te_split(xs, ys, test_ratio, valid_ratio, rand_state):
 
     return (xs[train_idxs], ys[train_idxs], xs[valid_idxs], ys[valid_idxs],
             xs[test_idxs], ys[test_idxs], train_idxs, valid_idxs, test_idxs)
+
+
+def build_revert_index(dataset):
+    revert_index = {}
+    for idx in range(len(dataset)):
+        tokens = nltk.word_tokenize(dataset.examples[idx]["text"].lower())
+        for token in tokens:
+            if token in revert_index:
+                revert_index[token].append(idx)
+            else:
+                revert_index[token] = [idx]
+
+    for token in revert_index:
+        revert_index[token] = np.array(revert_index[token])
+
+    return revert_index
+
+def load_wrench_data(data_root, dataset_name, feature):
+    if feature in ["tfidf", "bow"]:
+        train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
+                                                                  extract_feature=True, extract_fn=feature)
+    else:
+        train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
+                                                                  extract_feature=True, extract_fn=feature, cache_name=feature)
+
+    train_dataset.revert_index = build_revert_index(train_dataset)
+    valid_dataset.revert_index = build_revert_index(valid_dataset)
+    test_dataset.revert_index = build_revert_index(test_dataset)
+    return train_dataset, valid_dataset, test_dataset
 
 
 def load_local_data(data_root, dataset_name, feature, test_ratio=0.1, valid_ratio=0.1, warmup_ratio=0.0,

@@ -22,15 +22,15 @@ def to_onehot(ys, cardinality=2):
     return ys_onehot
 
 def evaluate_disc_model(disc_model, test_dataset):
-    y_pred = disc_model.predict(test_dataset.xs_feature)
-    y_probs = disc_model.predict_proba(test_dataset.xs_feature)
-    test_acc = accuracy_score(test_dataset.ys, y_pred)
+    y_pred = disc_model.predict(test_dataset.features)
+    y_probs = disc_model.predict_proba(test_dataset.features)
+    test_acc = accuracy_score(test_dataset.labels, y_pred)
     if test_dataset.n_class == 2:
-        test_auc = roc_auc_score(test_dataset.ys, y_probs[:, 1])
-        test_f1 = f1_score(test_dataset.ys, y_pred)
+        test_auc = roc_auc_score(test_dataset.labels, y_probs[:, 1])
+        test_f1 = f1_score(test_dataset.labels, y_pred)
     else:
-        test_auc = roc_auc_score(test_dataset.ys, y_probs, average="macro", multi_class="ovo")
-        test_f1 = f1_score(test_dataset.ys, y_pred, average="macro")
+        test_auc = roc_auc_score(test_dataset.labels, y_probs, average="macro", multi_class="ovo")
+        test_f1 = f1_score(test_dataset.labels, y_pred, average="macro")
 
     results = {
         "acc": test_acc,
@@ -39,37 +39,22 @@ def evaluate_disc_model(disc_model, test_dataset):
     }
     return results
 
-def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, warmup_dataset, soft_training,
+def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, soft_training,
                      ssl_method, seed):
     # prepare discriminator
     disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method)
 
     if soft_training:
-        # ys_tr = ys_tr_soft[:, 1]
-        # ys_warmup = (warmup_dataset.ys == 1).astype(float)
         ys_tr = ys_tr_soft
-        ys_warmup = to_onehot(warmup_dataset.ys, warmup_dataset.n_class)
     else:
         ys_tr = ys_tr_hard
-        ys_warmup = warmup_dataset.ys
-
-    if xs_tr is None:
-        assert len(warmup_dataset) > 0
-        xs_tr = warmup_dataset.xs_feature
-        ys_tr = ys_warmup
-    else:
-        xs_tr = np.vstack((xs_tr, warmup_dataset.xs_feature))
-        if soft_training:
-            ys_tr = np.vstack((ys_tr, ys_warmup))
-        else:
-            ys_tr = np.hstack((ys_tr, ys_warmup))
 
     if ssl_method is None:
         sample_weights = None
-        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, sample_weights)
+        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights)
         disc_model.fit(xs_tr, ys_tr, sample_weights)
     else:
-        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.xs_feature, valid_dataset.ys, xs_u)
+        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u)
         disc_model.fit(xs_tr, ys_tr, xs_u)
 
     return disc_model

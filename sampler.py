@@ -26,7 +26,7 @@ class ActiveSampler(Sampler):
         self.seed = seed
         random.seed(seed)
         np.random.seed(seed)
-        self.alibox = ToolBox(X=dataset.xs_feature, y=dataset.ys, query_type="AllLabels")
+        self.alibox = ToolBox(X=dataset.features, y=dataset.labels, query_type="AllLabels")
         self.label_index = self.alibox.IndexCollection([0]).difference_update([0])
         self.unlabel_index = self.alibox.IndexCollection(np.arange(len(dataset)))
 

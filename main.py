@@ -1,8 +1,8 @@
 import argparse
-from data_utils import load_local_data, load_hub_data, hub_data_paths, TextDataset, TextPairDataset
+from data_utils import load_local_data, load_hub_data, load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
-from lf_family import check_all_class, apply_lfs
+from lf_family import check_all_class, create_label_matrix
 from label_model import get_label_model, Snorkel, MajorityLabelVoter
 from end_model import train_disc_model, evaluate_disc_model
 from utils import append_results, append_history, save_results
@@ -15,20 +15,15 @@ import os
 
 
 def main(args):
-    if args.dataset_path not in hub_data_paths:
-        train_dataset, valid_dataset, test_dataset, warmup_dataset = load_local_data(args.dataset_path,
-                                                                                     args.dataset_name,
-                                                                                     args.feature_extractor)
-    else:
-        train_dataset, valid_dataset, test_dataset, warmup_dataset = load_hub_data(args.dataset_path,
-                                                                                   args.dataset_name,
-                                                                                   args.feature_extractor)
+    train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor)
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
     print(f"Train size: {len(train_dataset)}")
     print(f"Valid size: {len(valid_dataset)}")
     print(f"Test size: {len(test_dataset)}")
-    print(f"Example:", train_dataset[0]["sentence"])
-    print(f"Label:", train_dataset[0]["label"])
+    example = train_dataset.examples[0]["text"]
+    label = train_dataset.labels[0]
+    print(f"Example:", example)
+    print(f"Label:", label)
     if args.save_wandb:
         group_id = wandb.util.generate_id()
         config_dict = vars(args)
@@ -86,14 +81,14 @@ def main(args):
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
-                print("Query: ", train_dataset[query_idx]["sentence"])
+                print("Query: ",train_dataset.examples[query_idx]["text"])
             lf, pred = lf_agent.create_lf(query_idx)
             if lf is not None:
                 if args.display:
                     print("LF: ", lf.info())
-                    print("Ground truth: ", train_dataset[query_idx]["label"])
+                    print("Ground truth: ",train_dataset.labels[query_idx])
 
-                gt_labels.append(train_dataset[query_idx]["label"])
+                gt_labels.append(train_dataset.labels[query_idx])
                 response_labels.append(lf.label)
                 lfs.append(lf)
                 lf_cov, lf_acc = lf.get_cov_acc(train_dataset)
@@ -106,36 +101,36 @@ def main(args):
                     else:
                         label_model = get_label_model("mv", train_dataset.n_class)
 
-                    L_train = train_dataset.apply_lfs(lfs)
-                    L_val = valid_dataset.apply_lfs(lfs)
+                    L_train = create_label_matrix(train_dataset, lfs)
+                    L_val = create_label_matrix(valid_dataset, lfs)
                     if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, valid_dataset.ys)
+                        label_model.fit(L_train, L_val, valid_dataset.labels)
 
             else:
                 if args.display:
                     print("LF: None")
-                    print("Ground truth: ", train_dataset[query_idx]["label"])
-                gt_labels.append(train_dataset[query_idx]["label"])
+                    print("Ground truth: ", train_dataset.labels[query_idx])
+                gt_labels.append(train_dataset.labels[query_idx])
                 if pred is not None:
                     response_labels.append(pred)
                 else:
                     response_labels.append(-1)
 
-            history = append_history(history, train_dataset[query_idx], lf)
+            # history = append_history(history, train_dataset[query_idx], lf)
             if t % args.train_iter == args.train_iter - 1:
                 if label_model is not None:
                     # train discriminative model
                     ys_tr = label_model.predict(L_train)
                     ys_tr_soft = label_model.predict_proba(L_train)
                     covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1) # indices covered by LFs
-                    xs_tr = train_dataset.xs_feature[covered_indices, :]
-                    xs_u = train_dataset.xs_feature[~covered_indices, :]
+                    xs_tr = train_dataset.features[covered_indices, :]
+                    xs_u = train_dataset.features[~covered_indices, :]
                     ys_tr = ys_tr[covered_indices]
                     ys_tr_soft = ys_tr_soft[covered_indices, :]
                     # evaluate label quality
                     response_acc = accuracy_score(gt_labels, response_labels)
                     train_coverage = np.mean(covered_indices)
-                    train_precision = accuracy_score(train_dataset.ys[covered_indices], ys_tr)
+                    train_precision = accuracy_score(np.array(train_dataset.labels)[covered_indices], ys_tr)
                     lf_acc_avg = np.mean(lf_accs)
                     lf_cov_avg = np.mean(lf_covs)
                     if check_all_class(ys_tr, train_dataset.n_class):
@@ -145,7 +140,6 @@ def main(args):
                                                       ys_tr_hard=ys_tr,
                                                       xs_u=xs_u,
                                                       valid_dataset=valid_dataset,
-                                                      warmup_dataset=warmup_dataset,
                                                       soft_training=args.use_soft_labels,
                                                       ssl_method=args.ssl_method,
                                                       seed=seed)
@@ -216,7 +210,6 @@ def main(args):
             os.makedirs(results_path)
 
         save_results(results, results_path / f"results_{args.tag}_{run}.csv")
-        save_results(results, results_path / f"history_{args.tag}_{run}.csv")
         if args.save_wandb:
             wandb.finish()
 
@@ -224,8 +217,9 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # dataset
-    parser.add_argument("--dataset-path", type=str, default="glue", help="dataset path (or benchmark name)")
-    parser.add_argument("--dataset-name", type=str, default="sst2", help="dataset name")
+    parser.add_argument("--dataset-source", type=str, default="wrench", choices=["wrench", "nemo", "hub"])
+    parser.add_argument("--dataset-path", type=str, default="./data/wrench_data", help="dataset path")
+    parser.add_argument("--dataset-name", type=str, default="youtube", help="dataset name")
     parser.add_argument("--feature-extractor", type=str, default="tfidf", help="feature for training end model")
     # sampler
     parser.add_argument("--sampler", type=str, default="passive", help="sample selector")

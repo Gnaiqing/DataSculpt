@@ -4,7 +4,6 @@ import os
 from numpy.random import default_rng
 from lf_family import KeywordLF
 import openai
-from data_utils import TextDataset, TextPairDataset
 from gpt_utils import get_system_prompt
 import nltk
 
@@ -91,7 +90,7 @@ def extract_label_keywords(content, cardinality=2):
     for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
         keyword = tokens[idx]
         if keyword != "NA":
-            keyword_list.append(keyword)
+            keyword_list.append(keyword.lower())
 
     return label, keyword_list
 
@@ -169,13 +168,13 @@ class ChatGPTLFAgent:
         openai.api_key_path = api_key_path
 
     def create_lf(self, query_idx):
-        item = self.train_dataset[query_idx]
+        item = self.train_dataset.examples[query_idx]["text"]
         candidate_lfs = []
         if self.lf_type == "keyword":
             system_prompt = get_system_prompt(self.train_dataset.dataset_name, prompt_version=self.prompt_version)
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": item["sentence"]}
+                {"role": "user", "content": item}
             ]
             for i in range(self.repeats): # try multiple times if first attempt fails
                 try:
@@ -196,7 +195,7 @@ class ChatGPTLFAgent:
 
             if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item["token"]:
+                    if keyword in item:
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
 
@@ -246,11 +245,12 @@ class SimLFAgent:
         self.rng = default_rng(seed)
 
     def create_lf(self, query_idx):
-        item = self.train_dataset[query_idx]
-        label = item["label"]
+        item = self.train_dataset.examples[query_idx]["text"]
+        label = self.train_dataset.labels[query_idx]
+        tokens = nltk.word_tokenize(item.lower())
         candidate_lfs = []
         if self.lf_type == "keyword":
-            for token in item["token"]:
+            for token in tokens:
                 lf = KeywordLF(keyword=token, label=label)
                 candidate_lfs.append(lf)
         else:
