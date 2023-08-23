@@ -57,6 +57,7 @@ def main(args):
                                 model=args.lf_llm_model,
                                 prompt_version=args.llm_prompt_version,
                                 seed=seed,
+                                dataset_name=args.dataset_name
                                 )
         al_model = None
         lfs = []
@@ -76,18 +77,17 @@ def main(args):
             "test_f1": [],
             "test_auc": []
         }
-        history = {}
         label_model = None
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
-                print("Query: ",train_dataset.examples[query_idx]["text"])
-            lf, pred = lf_agent.create_lf(query_idx)
-            if lf is not None:
-                if args.display:
-                    print("LF: ", lf.info())
-                    print("Ground truth: ",train_dataset.labels[query_idx])
+                print("Query: ", train_dataset.examples[query_idx]["text"])
+            lf = lf_agent.create_lf(query_idx)
+            if args.display:
+                print("LF: ", lf.info())
+                print("Ground truth: ", train_dataset.labels[query_idx])
 
+            if lf.keyword != "NA":
                 gt_labels.append(train_dataset.labels[query_idx])
                 response_labels.append(lf.label)
                 lfs.append(lf)
@@ -107,12 +107,9 @@ def main(args):
                         label_model.fit(L_train, L_val, valid_dataset.labels)
 
             else:
-                if args.display:
-                    print("LF: None")
-                    print("Ground truth: ", train_dataset.labels[query_idx])
                 gt_labels.append(train_dataset.labels[query_idx])
-                if pred is not None:
-                    response_labels.append(pred)
+                if lf.label is not None:
+                    response_labels.append(lf.label)
                 else:
                     response_labels.append(-1)
 
@@ -122,7 +119,7 @@ def main(args):
                     # train discriminative model
                     ys_tr = label_model.predict(L_train)
                     ys_tr_soft = label_model.predict_proba(L_train)
-                    covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1) # indices covered by LFs
+                    covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
                     xs_tr = train_dataset.features[covered_indices, :]
                     xs_u = train_dataset.features[~covered_indices, :]
                     ys_tr = ys_tr[covered_indices]

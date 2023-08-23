@@ -171,7 +171,7 @@ class ChatGPTLFAgent:
         item = self.train_dataset.examples[query_idx]["text"]
         candidate_lfs = []
         if self.lf_type == "keyword":
-            system_prompt = get_system_prompt(self.train_dataset.dataset_name, prompt_version=self.prompt_version)
+            system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": item}
@@ -209,12 +209,9 @@ class ChatGPTLFAgent:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
         else:
-            lf = None
+            lf = KeywordLF(keyword="NA", label=label)
 
-        return lf, label
-
-
-
+        return lf
 
 
 class SimLFAgent:
@@ -263,9 +260,9 @@ class SimLFAgent:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
         else:
-            lf = None
+            lf = KeywordLF(keyword="NA", label=label)
 
-        return lf, label
+        return lf
 
 
 

@@ -51,9 +51,14 @@ def tr_val_te_split(xs, ys, test_ratio, valid_ratio, rand_state):
 
 def build_revert_index(dataset):
     revert_index = {}
+    count_vectorizer = CountVectorizer(strip_accents='ascii')
+    xs_text_tr = [dataset.examples[idx]["text"] for idx in range(len(dataset))]
+    count_vectorizer.fit(xs_text_tr)
+    analyzer = count_vectorizer.build_analyzer()
+    xs_token_tr = np.array([analyzer(text) for text in xs_text_tr], dtype='object')
+
     for idx in range(len(dataset)):
-        tokens = nltk.word_tokenize(dataset.examples[idx]["text"].lower())
-        for token in tokens:
+        for token in xs_token_tr[idx]:
             if token in revert_index:
                 revert_index[token].append(idx)
             else:

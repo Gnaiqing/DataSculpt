@@ -3,7 +3,9 @@ task_map = {
     "sms": "spam",
     "AmazonReview": "sentiment",
     "IMDB": "sentiment",
-    "Yelp": "sentiment"
+    "imdb": "sentiment",
+    "Yelp": "sentiment",
+    "yelp": "sentiment"
 }
 
 
@@ -88,6 +90,90 @@ prompt_map = {
             LABEL: 0
             KEYWORDS: pointless worst damn awful
             """
+    },
+    "chemical":
+    {
+        """
+        You are a chemical expert that design label functions in a data programming task for chemical relationship classification.
+        The Label function are composed of a keyword and a label, such that the keyword is indicative of the corresponding label. 
+        When the user provide a sentence and two chemicals occur in the sentence, first provide the label that indicates the relationship
+        of the two chemicals in the sentence, then provide a set of keywords occurred in the sentence that helps making predictions. 
+        Each keyword must be a single word in the sentence. Return NA for keywords if no indicative keywords can be identified.
+        There are 10 possible classes list as follows:
+        '''
+            "0": "Part of", 
+            "1": "Regulator",
+            "2": "Upregulator",
+            "3": "Downregulator",
+            "4": "Agonist",
+            "5": "Antagonist",
+            "6": "Modulator",
+            "7": "Cofactor",
+            "8": "Substrate/Product",
+            "9": "NOT", which indicate none of the above
+        '''
+        Example:
+        User: 
+        Identification and characterization of a novel flavin-containing spermine oxidase of mammalian cell origin. <spermine oxidase> <flavin>
+        Response:
+        LABEL: 0
+        KEYWORDS: containing
+        User: 
+        Among neuroleptics, the four most potent compounds at the human serotonin transporter were triflupromazine, 
+        fluperlapine, chlorpromazine, and ziprasidone (K(D) 24-39 nM); and at the norepinephrine transporter, chlorpromazine, 
+        zotepine, chlorprothixene, and promazine (K(D) 19-25 nM). <norepinephrine transporter> <chlorpromazine>
+        Response:
+        LABEL: 1
+        KEYWORDS: neuroleptics
+        User:
+        Lintitript markedly increased postprandial plasma CCK release (P<0.001) while distinctly reducing postprandial 
+        PP levels (P<0.01) as compared to placebo. <CCK> <Lintitript>
+        Response:
+        LABEL: 2
+        KEYWORDS: increased
+        User: 
+        Selective inhibition of PDE5 is a rational therapeutic approach in ED, as proved by the clinical success 
+        of sildenafil. <PDE5> <sildenafil>
+        Response:
+        LABEL: 3
+        KEYWORDS: inhibition
+        User: 
+        Cellular release of AChE by SH-SY5Y is significantly enhanced by the muscarinic acetylcholine receptor (mAChR) 
+        agonists carbachol or muscarine, with the effect of carbachol blocked by the mAChR antagonist atropine. <mAChR> <muscarine>
+        Response:
+        LABEL: 4
+        KEYWORDS: agonists
+        User: 
+        While a number of orally active non-peptide V(2) antagonists (Vaptans); notably, Tolvaptan, Lixivaptan and Satavaptan, 
+        are currently in Phase III clinical trials; to date, only the mixed V(2)/V(1a), antagonist Conivaptan (Vaprisol), 
+        has been approved by the US FDA for clinical use (by i.v. <V(2)> <Lixivaptan>
+        Response:
+        LABEL: 5
+        KEYWORDS: antagoists
+        User:
+        Anxiolytic- but not antidepressant-like activity of Lu AF21934, a novel, selective positive allosteric modulator of the mGlu\u2084 receptor. <mGlu\u2084> <Lu AF21934>
+        Response:
+        LABEL: 6
+        KEYWORDS: modulator
+        User: 
+        Phenylbutazone (PB), a nonsteroidal anti-inflammatory drug, is an efficient reducing cofactor for the peroxidase activity of prostaglandin H synthase (PHS). <PHS> <Phenylbutazone>
+        Response:
+        LABEL: 7
+        KEYWORDS: cofactor
+        User: 
+        Furthermore, knockdown of OPN enhanced cell death caused by other drugs, including paclitaxel, doxorubicin, 
+        actinomycin-D, and rapamycin, which are also P-gp substrates. <P-gp> <paclitaxel>
+        Response:
+        LABEL: 8
+        KEYWORDS: substrates  
+        User: 
+        Jo2-induced activation of caspase-3 or -9 in liver tissues was inhibited by minocycline pretreatment, and yet 
+        the direct addition of minocycline to liver extracts from Jo2-challenged mice failed to block caspase activation in vitro.
+        <caspase> <minocycline>
+        Response:
+        LABEL: 9
+        KEYWORDS: NA   
+        """
     }
 }
 
