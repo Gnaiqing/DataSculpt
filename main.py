@@ -3,7 +3,7 @@ from data_utils import load_local_data, load_hub_data, load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
 from lf_family import check_all_class, create_label_matrix
-from label_model import get_label_model, Snorkel, MajorityLabelVoter
+from label_model import get_label_model, Snorkel
 from end_model import train_disc_model, evaluate_disc_model
 from utils import append_results, append_history, save_results
 import numpy as np
@@ -95,7 +95,7 @@ def main(args):
                 lf_covs.append(lf_cov)
                 lf_accs.append(lf_acc)
                 lf_labels = [lf.label for lf in lfs]
-                if check_all_class(lf_labels, train_dataset.n_class):
+                if np.min(lf_labels) != np.max(lf_labels):
                     if len(lfs) > 3:
                         label_model = get_label_model(args.label_model, train_dataset.n_class)
                     else:
@@ -104,7 +104,7 @@ def main(args):
                     L_train = create_label_matrix(train_dataset, lfs)
                     L_val = create_label_matrix(valid_dataset, lfs)
                     if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, valid_dataset.labels)
+                        label_model.fit(L_train, L_val, valid_dataset.labels, tune_label_model=args.tune_label_model)
 
             else:
                 gt_labels.append(train_dataset.labels[query_idx])
@@ -113,7 +113,6 @@ def main(args):
                 else:
                     response_labels.append(-1)
 
-            # history = append_history(history, train_dataset[query_idx], lf)
             if t % args.train_iter == args.train_iter - 1:
                 if label_model is not None:
                     # train discriminative model
@@ -130,7 +129,8 @@ def main(args):
                     train_precision = accuracy_score(np.array(train_dataset.labels)[covered_indices], ys_tr)
                     lf_acc_avg = np.mean(lf_accs)
                     lf_cov_avg = np.mean(lf_covs)
-                    if check_all_class(ys_tr, train_dataset.n_class):
+
+                    if np.min(ys_tr) != np.max(ys_tr):
                         disc_model = train_disc_model(model_type=args.end_model,
                                                       xs_tr=xs_tr,
                                                       ys_tr_soft=ys_tr_soft,
@@ -139,6 +139,7 @@ def main(args):
                                                       valid_dataset=valid_dataset,
                                                       soft_training=args.use_soft_labels,
                                                       ssl_method=args.ssl_method,
+                                                      tune_end_model=args.tune_end_model,
                                                       seed=seed)
                         # evaluate end model performance
                         test_perf = evaluate_disc_model(disc_model, test_dataset)
@@ -225,6 +226,8 @@ if __name__ == '__main__':
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
     parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])
+    parser.add_argument("--tune-label-model", type=bool, default=True, help="tune label model hyperparameters")
+    parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
     # label function
     parser.add_argument("--lf-agent", type=str, default="simulated", help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", help="LF family")

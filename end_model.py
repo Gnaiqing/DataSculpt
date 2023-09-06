@@ -7,19 +7,21 @@ import optuna
 import pdb
 
 
-def get_discriminator(model_type, prob_labels, params=None, seed=None, ssl_method=None):
+def get_discriminator(model_type, prob_labels, params=None, seed=None, ssl_method=None, n_class=2):
     if model_type == 'logistic':
         if ssl_method is None:
-            return LogReg(prob_labels, params, seed)
+            return LogReg(prob_labels, params, seed, n_class=n_class)
         else:
-            return LogRegSSL(params, seed)
+            return LogRegSSL(params, seed, n_class=n_class)
     else:
         raise ValueError('discriminator model not supported.')
+
 
 def to_onehot(ys, cardinality=2):
     ys_onehot = np.zeros((len(ys),cardinality), dtype=float)
     ys_onehot[range(len(ys_onehot)), ys] = 1.0
     return ys_onehot
+
 
 def evaluate_disc_model(disc_model, test_dataset):
     y_pred = disc_model.predict(test_dataset.features)
@@ -39,10 +41,12 @@ def evaluate_disc_model(disc_model, test_dataset):
     }
     return results
 
+
 def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, soft_training,
-                     ssl_method, seed):
+                     ssl_method, tune_end_model, seed):
     # prepare discriminator
-    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method)
+    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method,
+                                   n_class=valid_dataset.n_class)
 
     if soft_training:
         ys_tr = ys_tr_soft
@@ -51,10 +55,16 @@ def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_data
 
     if ssl_method is None:
         sample_weights = None
-        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights)
+        if tune_end_model:
+            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights)
+        else:
+            disc_model.best_params = {}
         disc_model.fit(xs_tr, ys_tr, sample_weights)
     else:
-        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u)
+        if tune_end_model:
+            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u)
+        else:
+            disc_model.best_params = {}
         disc_model.fit(xs_tr, ys_tr, xs_u)
 
     return disc_model
@@ -75,11 +85,11 @@ class Classifier:
 
 
 class LogReg(Classifier):
-    def __init__(self, prob_labels, params=None, seed=None):
+    def __init__(self, prob_labels, params=None, seed=None, n_class=2):
         self.prob_labels = prob_labels
         self.model = None
         self.best_params = None
-
+        self.n_class = n_class
         if params is None:
             params = {
                 'solver': ['liblinear'],
@@ -111,6 +121,12 @@ class LogReg(Classifier):
                 sample_weights = np.hstack([sample_weights] * cardinality) * weights
             else:
                 sample_weights = weights
+
+            # remove data instance with zero weights
+            active_idxs = sample_weights != 0
+            x_train = x_train[active_idxs, :]
+            y_train = y_train[active_idxs]
+            sample_weights = sample_weights[active_idxs]
 
         def objective(trial):
             suggestions = {key: trial.suggest_categorical(key, search_space[key]) for key in search_space}
@@ -146,6 +162,13 @@ class LogReg(Classifier):
             else:
                 sample_weights = weights
 
+            # remove data instance with zero weights
+            active_idxs = sample_weights != 0
+            xs = xs[active_idxs, :]
+            ys = ys[active_idxs]
+            sample_weights = sample_weights[active_idxs]
+
+        self.active_classes = np.unique(ys).astype(int)  # classes that the model returns
         if self.best_params is not None:
             model = LogisticRegression(**self.best_params, random_state=self.seed)
             model.fit(xs, ys, sample_weight=sample_weights)
@@ -157,17 +180,20 @@ class LogReg(Classifier):
         return self.model.predict(xs)
 
     def predict_proba(self, xs):
-        return self.model.predict_proba(xs)
+        proba = np.zeros((len(xs), self.n_class))
+        proba[:, self.active_classes] = self.model.predict_proba(xs)
+        return proba
+        # return self.model.predict_proba(xs)
 
 
 class LogRegSSL(Classifier):
     """
     Apply self training for semi-supervised learning
     """
-    def __init__(self, params=None, seed=None):
+    def __init__(self, params=None, seed=None, n_class=2):
         self.model = None
         self.best_params = None
-
+        self.n_class = n_class
         if params is None:
             params = {
                 'LogReg': {
