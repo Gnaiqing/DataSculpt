@@ -7,6 +7,8 @@ This project aims at exploring the possibility of applying large language models
 ```angular2html
 python -m venv .env
 source .env/bin/activate
+pip install ws-benchmark==1.1.2rc0
+pip install pytokenizations
 pip install transformers[sentencepiece]
 pip install datasets
 pip install torch torchvision torchaudio
