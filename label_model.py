@@ -43,13 +43,13 @@ class Snorkel:
 
         return ys_onehot
 
-    def fit(self, L_tr, L_val, ys_val, scoring='logloss'):
+    def fit(self, L_tr, L_val, ys_val, scoring='logloss', tune_label_model=True):
         search_space = self.search_space
 
         def objective(trial):
             suggestions = {key: trial.suggest_categorical(key, search_space[key]) for key in search_space}
             nonlocal L_tr, L_val, ys_val
-            model = LabelModel(cardinality=2, verbose=False)
+            model = LabelModel(cardinality=self.cardinality, verbose=False)
             model.fit(L_train=L_tr, Y_dev=ys_val, **suggestions, seed=self.seed, progress_bar=False)
 
             # logloss as validation loss
@@ -66,9 +66,12 @@ class Snorkel:
             return val_loss
 
         # search for best hyperparameter
-        study = optuna.create_study(sampler=optuna.samplers.GridSampler(search_space), direction='minimize')
-        study.optimize(objective, n_trials=self.n_trials)
-        self.best_params = study.best_params
+        if tune_label_model:
+            study = optuna.create_study(sampler=optuna.samplers.GridSampler(search_space), direction='minimize')
+            study.optimize(objective, n_trials=self.n_trials)
+            self.best_params = study.best_params
+        else:
+            self.best_params = {}
         self.model = LabelModel(cardinality=self.cardinality,verbose=False)
         self.model.fit(L_train=L_tr, Y_dev=ys_val, **self.best_params, seed=self.seed, progress_bar=False)
 

@@ -1,5 +1,5 @@
 import numpy as np
-from data_utils import TextDataset, TextPairDataset
+import nltk
 from sklearn.metrics import accuracy_score
 class KeywordLF:
     def __init__(self, keyword, label):
@@ -14,19 +14,21 @@ class KeywordLF:
         return False
 
     def apply(self, x):
-        if self.keyword in x["token"]:
+        tokens = nltk.word_tokenize(x)
+        if self.keyword in tokens:
             return self.label
         else:
             return -1
 
-    def apply_to_dataset(self, dataset:TextDataset):
+    def apply_to_dataset(self, dataset):
         wl = np.repeat(-1, len(dataset))
         if self.keyword in dataset.revert_index:
             active_indices = dataset.revert_index[self.keyword]
             wl[active_indices] = self.label
 
         return wl
-    def get_active_indices(self, dataset:TextDataset):
+
+    def get_active_indices(self, dataset):
         if self.keyword in dataset.revert_index:
             active_indices = dataset.revert_index[self.keyword]
         else:
@@ -34,12 +36,12 @@ class KeywordLF:
 
         return active_indices
 
-    def get_cov_acc(self, dataset:TextDataset):
+    def get_cov_acc(self, dataset):
         active_indices = self.get_active_indices(dataset)
         if len(active_indices) == 0:
             return 0.0, np.nan
 
-        ys = dataset.ys[active_indices]
+        ys = np.array(dataset.labels)[active_indices]
         if -1 in ys:
             # the dataset has missing ground-truth labels
             acc = np.nan
@@ -53,7 +55,7 @@ class KeywordLF:
         return f"{self.keyword}->{self.label}"
 
 
-def apply_lfs(lfs, dataset):
+def create_label_matrix(dataset, lfs):
     weak_labels = []
     for lf in lfs:
         wl = lf.apply_to_dataset(dataset)

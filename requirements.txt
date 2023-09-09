@@ -1,10 +1,14 @@
+numpy
+ws-benchmark==1.1.2rc0
+pytokenizations
+transformers[sentencepiece]
+datasets
 torch
 torchvision
 torchaudio
-transformers[sentencepiece]
-datasets
 snorkel
 optuna
 wandb
 alipy
 sentence-transformers
+openai

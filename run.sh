@@ -1,11 +1,17 @@
-data_name=$1
-data_path=$2
-model=$3
-model_size=$4
-
-model_path=./$model-$model_size
-echo $model_path
-python main.py --dataset-path $data_path --dataset-name $data_name --lf-agent $model --lf-llm-model $model_path -save-wandb --use-soft-labels
+data_path=$1
+model=$2
+# sms Yelp AmazonReview
+# 0.7 0.8s
+# --save-wandb
+for data_name in youtube sms Yelp AmazonReview; do
+  for model_size in 13b; do
+      model_path=$model-$model_size
+      echo $model_path
+       for acc in 0.6; do
+          python main.py --dataset-path $data_path --dataset-name $data_name --lf-acc-threshold $acc --lf-agent $model --lf-llm-model $model_path --use-soft-labels --save-wandb
+      done
+  done
+done
 
 #    parser.add_argument("--dataset-path", type=str, default="glue", help="dataset path (or benchmark name)")
 #     parser.add_argument("--dataset-name", type=str, default="sst2", help="dataset name")

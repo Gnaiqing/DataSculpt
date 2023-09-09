@@ -6,7 +6,7 @@ from lf_family import KeywordLF
 import openai
 from data_utils import TextDataset, TextPairDataset
 from transformers import AutoTokenizer,LlamaForCausalLM
-from gpt_utils import get_system_prompt
+from gpt_utils import get_system_prompt,get_single_task_system_prompt
 import nltk
 import torch
 
@@ -69,6 +69,7 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
     return filtered_lfs
 
 
+
 def extract_label_keywords(content, cardinality=2):
     """
     Extract label and keywords from contents returned by LLMs
@@ -87,15 +88,60 @@ def extract_label_keywords(content, cardinality=2):
         return None, None
 
     keyword_idx = tokens.index("KEYWORDS") + 2
+    if "EXPLANATION" in tokens:
+        last_keyword_pos = tokens.index("EXPLANATION")
+    else:
+        last_keyword_pos = len(tokens)
+    keyword_list = []
+    for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
+        keyword = tokens[idx]
+        if keyword != "NA":
+            keyword_list.append(keyword.lower())
+
+    return label, keyword_list
+
+
+
+
+def extract_label(content, cardinality=2):
+    """
+    Extract label and keywords from contents returned by LLMs
+    :param content: returned contents
+    :return: label, keyword_list
+    """
+    tokens = nltk.word_tokenize(content)
+    classes = range(cardinality)
+    if "LABEL" not in tokens:
+        return None,
+
+    label_idx = tokens.index("LABEL") + 2
+    if label_idx < len(tokens) and tokens[label_idx].isdigit() and int(tokens[label_idx]) in classes:
+        label = int(tokens[label_idx])
+    else:
+        return None
+
+    return label
+
+def extract_keywords(content, cardinality=2):
+    """
+    Extract label and keywords from contents returned by LLMs
+    :param content: returned contents
+    :return: label, keyword_list
+    """
+    tokens = nltk.word_tokenize(content)
+    classes = range(cardinality)
+    if "KEYWORDS" not in tokens:
+        return None
+
+
+    keyword_idx = tokens.index("KEYWORDS") + 2
     keyword_list = []
     for idx in np.arange(len(tokens) - keyword_idx) + keyword_idx:
         keyword = tokens[idx]
         if keyword != "NA":
             keyword_list.append(keyword)
 
-    return label, keyword_list
-
-
+    return keyword_list
 class SentimentLexicon:
     def __init__(self, data_root):
         pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
@@ -165,7 +211,7 @@ class ChatGPTLFAgent:
 
 
     def create_lf(self, query_idx):
-        item = self.train_dataset[query_idx]
+        item = self.train_dataset.examples[query_idx]["text"]
         candidate_lfs = []
         if self.lf_type == "keyword":
             system_prompt = get_system_prompt(self.train_dataset.dataset_name)
@@ -188,7 +234,7 @@ class ChatGPTLFAgent:
 
             if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item["token"]:
+                    if keyword in item:
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
 
@@ -241,8 +287,9 @@ class Llama2LFAgent:
         self.repeats = repeats
         self.display = display
     def create_lf(self, query_idx):
-        def predict(prompt, n=1,total_tokens=4096,temperature=0.75,top_p=1.0,repetition_penalty=1):
+        def predict(prompt, n=1,new_token=20,temperature=0.25,top_p=1.0,repetition_penalty=1):
             input_text = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+            total_tokens = input_text.shape[1]+ new_token
             with torch.no_grad():
                   outputs = self.model.generate(
                   input_text,
@@ -256,23 +303,37 @@ class Llama2LFAgent:
             start_idx = len(prompt)
             out = [i[start_idx:] for i in out]
             return out
-        item = self.train_dataset[query_idx]
+        item = self.train_dataset.examples[query_idx]["text"]
         candidate_lfs = []
         if self.lf_type == "keyword":
             label = None
-            system_prompt = get_system_prompt(self.train_dataset.dataset_name)
-            full_prompt = system_prompt + "\n" + item["sentence"]
+            keyword_prompt,label_prompt = get_single_task_system_prompt(self.kwargs["dataset_name"])
+            full_prompt = label_prompt + "\n" + item
             response_contents = predict(full_prompt,n=self.repeats)
             for response_content in response_contents:
                 if self.display:
                     print("Response: ", response_content)
 
-                label, keyword_list = extract_label_keywords(response_content, self.train_dataset.n_class)
+                label = extract_label(response_content, self.train_dataset.n_class)
                 if label is not None:
                     break
+        
             if label is not None:
+                full_prompt = keyword_prompt + "\n" + item 
+                response_contents = predict(full_prompt,n=self.repeats)
+                for response_content in response_contents:
+                    if self.display:
+                        print("Response: ", response_content)
+
+                    keyword_list = extract_keywords(response_content, self.train_dataset.n_class)
+                    if keyword_list is not None and len(keyword_list)>0:
+                        break
+                if keyword_list is None or (len(keyword_list)==0) :
+                    keyword_list = ["NA"]
+                
+                
                 for keyword in keyword_list:
-                    if keyword in item["token"]:
+                    if keyword in item:
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
         else:
@@ -285,7 +346,7 @@ class Llama2LFAgent:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
         else:
-            lf = None
+            lf = KeywordLF(keyword="NA", label=label)
 
         return lf
 
@@ -318,8 +379,9 @@ class SimLFAgent:
         self.rng = default_rng(seed)
 
     def create_lf(self, query_idx):
-        item = self.train_dataset[query_idx]
-        label = item["label"]
+        item = self.train_dataset.examples[query_idx]["text"]
+        label = self.train_dataset.labels[query_idx]
+        tokens = nltk.word_tokenize(item.lower())
         candidate_lfs = []
         if self.lf_type == "keyword":
             for token in item["token"]:
