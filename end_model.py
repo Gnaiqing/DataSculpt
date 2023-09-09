@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 from sklearn.utils import shuffle
 from sklearn.semi_supervised import LabelSpreading, LabelPropagation, SelfTrainingClassifier
 import optuna
@@ -33,6 +33,9 @@ def evaluate_disc_model(disc_model, test_dataset):
     else:
         test_auc = roc_auc_score(test_dataset.labels, y_probs, average="macro", multi_class="ovo")
         test_f1 = f1_score(test_dataset.labels, y_pred, average="macro")
+
+    cm = confusion_matrix(test_dataset.labels, y_pred)
+    print("Confusion matrix (end model):\n", cm)
 
     results = {
         "acc": test_acc,

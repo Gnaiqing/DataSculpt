@@ -4,8 +4,10 @@ import os
 from numpy.random import default_rng
 from lf_family import KeywordLF
 import openai
-from gpt_utils import get_system_prompt
+from gpt_utils import create_prompt
+from data_utils import relation_extraction_datasets
 import nltk
+
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
     if agent_type == "simulated":
@@ -14,7 +16,6 @@ def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
         return ChatGPTLFAgent(train_dataset, valid_dataset, **kwargs)
     else:
         raise ValueError("LF agent not supported.")
-
 
 
 def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
@@ -82,10 +83,7 @@ def extract_label_keywords(content, cardinality=2):
         return None, None
 
     keyword_idx = tokens.index("KEYWORDS") + 2
-    if "EXPLANATION" in tokens:
-        last_keyword_pos = tokens.index("EXPLANATION")
-    else:
-        last_keyword_pos = len(tokens)
+    last_keyword_pos = tokens.index("LABEL")
     keyword_list = []
     for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
         keyword = tokens[idx]
@@ -140,7 +138,8 @@ class SentimentLexicon:
 class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
                  acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",
-                 display=True, repeats=1, prompt_version="v1", **kwargs):
+                 example_per_class=1, example_selection="random", return_explanation=False, play_expert_role=False,
+                 dp_aware=False, display=True, repeats=1, **kwargs):
         """
         LF Agent using ChatGPT
         :param train_dataset:
@@ -163,24 +162,44 @@ class ChatGPTLFAgent:
         self.model = model
         self.display = display
         self.repeats = repeats
-        self.prompt_version = prompt_version
+        self.example_per_class = example_per_class
+        self.example_selection = example_selection
+        self.return_explanation = return_explanation
+        self.play_expert_role = play_expert_role
+        self.dp_aware = dp_aware
         self.kwargs = kwargs
         openai.api_key_path = api_key_path
+        self.system_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
+                                          example_per_class=self.example_per_class,
+                                          example_selection=self.example_selection,
+                                          explanation=self.return_explanation,
+                                          expert_role=self.play_expert_role,
+                                          dp_aware=self.dp_aware)
+        if self.display:
+            print("ChatGPT system prompt:")
+            print(self.system_prompt)
 
     def create_lf(self, query_idx):
-        item = self.train_dataset.examples[query_idx]["text"]
+        if self.kwargs["dataset_name"] in relation_extraction_datasets:
+            text = self.train_dataset.examples[query_idx]["text"]
+            entity1 = self.train_dataset.examples[query_idx]["entity1"]
+            entity2 = self.train_dataset.examples[query_idx]["entity2"]
+            item = "{} <{}> <{}>".format(text, entity1, entity2)
+        else:
+            item = self.train_dataset.examples[query_idx]["text"]
+
         candidate_lfs = []
         if self.lf_type == "keyword":
-            system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
+            # system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
             messages = [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": item}
             ]
-            for i in range(self.repeats): # try multiple times if first attempt fails
+            for i in range(self.repeats):  # try multiple times if first attempt fails
                 try:
                     response = openai.ChatCompletion.create(
                         model=self.model,
-                        messages = messages
+                        messages=messages
                     )
                     response_content = response['choices'][0]["message"]["content"]
                 except openai.error.OpenAIError:
@@ -195,7 +214,7 @@ class ChatGPTLFAgent:
 
             if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item:
+                    if keyword in item and keyword != ",":
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
 
@@ -215,7 +234,7 @@ class ChatGPTLFAgent:
 
 
 class SimLFAgent:
-    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique", "consist"),
+    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
                  acc_threshold=0.6, data_root="./data", seed=0, **kwargs):
         """
         Simulated LF Agent that return a LF with accuracy above threshold

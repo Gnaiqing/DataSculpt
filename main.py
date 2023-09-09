@@ -1,13 +1,13 @@
 import argparse
-from data_utils import load_local_data, load_hub_data, load_wrench_data
+from data_utils import load_wrench_data, relation_extraction_datasets
 from sampler import get_sampler
 from lf_agent import get_lf_agent
 from lf_family import check_all_class, create_label_matrix
 from label_model import get_label_model, Snorkel
 from end_model import train_disc_model, evaluate_disc_model
-from utils import append_results, append_history, save_results
+from utils import append_results, save_results, print_dataset_stats
 import numpy as np
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from tqdm import trange
 import wandb
 from pathlib import Path
@@ -17,13 +17,10 @@ import os
 def main(args):
     train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor)
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
-    print(f"Train size: {len(train_dataset)}")
-    print(f"Valid size: {len(valid_dataset)}")
-    print(f"Test size: {len(test_dataset)}")
-    example = train_dataset.examples[0]["text"]
-    label = train_dataset.labels[0]
-    print(f"Example:", example)
-    print(f"Label:", label)
+    print_dataset_stats(train_dataset, split="train")
+    print_dataset_stats(valid_dataset, split="valid")
+    print_dataset_stats(test_dataset, split="test")
+
     if args.save_wandb:
         group_id = wandb.util.generate_id()
         config_dict = vars(args)
@@ -55,9 +52,14 @@ def main(args):
                                 filter_methods=args.lf_filter,
                                 acc_threshold=args.lf_acc_threshold,
                                 model=args.lf_llm_model,
-                                prompt_version=args.llm_prompt_version,
                                 seed=seed,
-                                dataset_name=args.dataset_name
+                                dataset_name=args.dataset_name,
+                                # following configs are for GPT/llama models
+                                example_per_class=args.example_per_class,
+                                example_selection=args.example_selection,
+                                return_explanation=args.return_explanation,
+                                play_expert_role=args.play_expert_role,
+                                dp_aware=args.dp_aware,
                                 )
         al_model = None
         lfs = []
@@ -67,7 +69,7 @@ def main(args):
         response_labels = []
         results = {
             "num_query": [],
-            "lf_num" : [],
+            "lf_num": [],
             "response_acc": [],
             "lf_acc_avg": [],
             "lf_cov_avg": [],
@@ -77,11 +79,18 @@ def main(args):
             "test_f1": [],
             "test_auc": []
         }
+
         label_model = None
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
-                print("Query: ", train_dataset.examples[query_idx]["text"])
+                if args.dataset_name in relation_extraction_datasets:
+                    text = train_dataset.examples[query_idx]["text"]
+                    entity1 = train_dataset.examples[query_idx]["entity1"]
+                    entity2 = train_dataset.examples[query_idx]["entity2"]
+                    print("Query: {} <{}> <{}>".format(text, entity1, entity2))
+                else:
+                    print("Query: ", train_dataset.examples[query_idx]["text"])
             lf = lf_agent.create_lf(query_idx)
             if args.display:
                 print("LF: ", lf.info())
@@ -117,6 +126,11 @@ def main(args):
                 if label_model is not None:
                     # train discriminative model
                     ys_tr = label_model.predict(L_train)
+                    ys_tr_gt = train_dataset.labels
+                    cm = confusion_matrix(ys_tr_gt, ys_tr)
+                    train_prec = precision_score(ys_tr_gt, ys_tr)
+                    train_recall = recall_score(ys_tr_gt, ys_tr)
+                    print("Confusion matrix (label model)\n", cm)
                     ys_tr_soft = label_model.predict_proba(L_train)
                     covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
                     xs_tr = train_dataset.features[covered_indices, :]
@@ -233,8 +247,13 @@ if __name__ == '__main__':
     parser.add_argument("--lf-type", type=str, default="keyword", help="LF family")
     parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for simulated agent")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.5, help="LF accuracy threshold for simulated agent")
+    # prompting method
     parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo")
-    parser.add_argument("--llm-prompt-version", type=str, default="v1", help="LLM prompt version")
+    parser.add_argument("--example-per-class", type=int, default=1)
+    parser.add_argument("--return-explanation", action="store_true")
+    parser.add_argument("--play-expert-role", action="store_true")
+    parser.add_argument("--dp-aware", action="store_true")
+    parser.add_argument("--example-selection", type=str, default="random")
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")
