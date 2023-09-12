@@ -23,30 +23,8 @@ def to_onehot(ys, cardinality=2):
     return ys_onehot
 
 
-def evaluate_disc_model(disc_model, test_dataset):
-    y_pred = disc_model.predict(test_dataset.features)
-    y_probs = disc_model.predict_proba(test_dataset.features)
-    test_acc = accuracy_score(test_dataset.labels, y_pred)
-    if test_dataset.n_class == 2:
-        test_auc = roc_auc_score(test_dataset.labels, y_probs[:, 1])
-        test_f1 = f1_score(test_dataset.labels, y_pred)
-    else:
-        test_auc = roc_auc_score(test_dataset.labels, y_probs, average="macro", multi_class="ovo")
-        test_f1 = f1_score(test_dataset.labels, y_pred, average="macro")
-
-    cm = confusion_matrix(test_dataset.labels, y_pred)
-    print("Confusion matrix (end model):\n", cm)
-
-    results = {
-        "acc": test_acc,
-        "auc": test_auc,
-        "f1": test_f1
-    }
-    return results
-
-
 def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, soft_training,
-                     ssl_method, tune_end_model, seed):
+                     ssl_method, tune_end_model, tune_metric, seed):
     # prepare discriminator
     disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method,
                                    n_class=valid_dataset.n_class)
@@ -59,13 +37,13 @@ def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_data
     if ssl_method is None:
         sample_weights = None
         if tune_end_model:
-            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights)
+            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights, scoring=tune_metric)
         else:
             disc_model.best_params = {}
         disc_model.fit(xs_tr, ys_tr, sample_weights)
     else:
         if tune_end_model:
-            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u)
+            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u, scoring=tune_metric)
         else:
             disc_model.best_params = {}
         disc_model.fit(xs_tr, ys_tr, xs_u)
@@ -106,6 +84,13 @@ class LogReg(Classifier):
         else:
             self.seed = seed
 
+    def _to_onehot(self, ys):
+        ys = np.array(ys)
+        ys[ys == -1] = 0
+        ys_onehot = np.zeros((len(ys), self.n_class))
+        ys_onehot[range(len(ys_onehot)), ys] = 1
+        return ys_onehot
+
     def tune_params(self, x_train, y_train, x_valid, y_valid, sample_weights=None, scoring='acc'):
         search_space = self.params
 
@@ -136,11 +121,17 @@ class LogReg(Classifier):
             model = LogisticRegression(**suggestions, random_state=self.seed)
             model.fit(x_train, y_train, sample_weights)
             ys_pred = model.predict(x_valid)
-
+            if scoring == 'logloss':
+                ys_pred_val = model.predict_proba(x_valid)
+                ys_val_onehot = self._to_onehot(y_valid)
+                val_score = (ys_val_onehot * np.log(np.clip(ys_pred_val, 1e-6, 1.))).sum(axis=1).mean()
             if scoring == 'acc':
                 val_score = accuracy_score(y_valid, ys_pred)
             elif scoring == 'f1':
-                val_score = f1_score(y_valid, ys_pred)
+                if self.n_class > 2:
+                    val_score = f1_score(y_valid, ys_pred, average="macro")
+                else:
+                    val_score = f1_score(y_valid, ys_pred)
 
             return val_score
 

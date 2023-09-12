@@ -7,6 +7,7 @@ import openai
 from gpt_utils import create_prompt
 from data_utils import relation_extraction_datasets
 import nltk
+import re
 
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
@@ -214,7 +215,7 @@ class ChatGPTLFAgent:
 
             if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item and keyword != ",":
+                    if keyword in item and re.search('[a-zA-Z]', keyword):
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
 

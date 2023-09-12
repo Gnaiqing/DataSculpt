@@ -14,6 +14,7 @@ relation_extraction_datasets = ("chemprot", "cdr")
 lf_accs = [0.6]
 lf_agent_types = ["chatgpt"]
 
+
 for dataset in datasets:
     if dataset in relation_extraction_datasets:
         feature_extractor = "bert"
@@ -23,6 +24,6 @@ for dataset in datasets:
     for acc in lf_accs:
         for agent in lf_agent_types:
             cmd = f"python main.py --dataset-path {data_root} --dataset-name {dataset} --feature-extractor {feature_extractor} " \
-                  f"--lf-agent {agent} --lf-acc-threshold {acc} --lf-filter acc unique --display --save-wandb"
+                  f"--lf-agent {agent} --lf-acc-threshold {acc} --lf-filter acc unique --dp-aware --display --save-wandb"
             print(cmd)
             os.system(cmd)
