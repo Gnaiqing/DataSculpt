@@ -1,7 +1,7 @@
 import numpy as np
 import optuna.logging
 from snorkel.labeling.model import LabelModel, MajorityLabelVoter
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, accuracy_score
 
 optuna.logging.disable_default_handler()
 
@@ -59,9 +59,17 @@ class Snorkel:
                 val_loss = -(ys_val_onehot * np.log(np.clip(ys_pred_val, 1e-6, 1.))).sum(axis=1).mean()
             elif scoring == 'f1':
                 ys_pred = model.predict(L_val)
-                val_loss = -f1_score(ys_val, ys_pred)
+                active_indices = ys_pred != -1
+                if self.cardinality > 2:
+                    val_loss = -f1_score(ys_val[active_indices], ys_pred[active_indices], average="macro")
+                else:
+                    val_loss = -f1_score(ys_val[active_indices], ys_pred[active_indices])
+            elif scoring == "acc":
+                ys_pred = model.predict(L_val)
+                active_indices = ys_pred != -1
+                val_loss = -accuracy_score(ys_val[active_indices], ys_pred[active_indices])
             else:
-                raise ValueError ("Scoring metric not supported.")
+                raise ValueError("Scoring metric not supported.")
 
             return val_loss
 

@@ -4,11 +4,10 @@ import os
 from numpy.random import default_rng
 from lf_family import KeywordLF
 import openai
-from data_utils import TextDataset, TextPairDataset
-from transformers import AutoTokenizer,LlamaForCausalLM
-from gpt_utils import get_system_prompt,get_single_task_system_prompt
+from gpt_utils import create_prompt
+from data_utils import relation_extraction_datasets
 import nltk
-import torch
+import re
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
     if agent_type == "simulated":
@@ -69,7 +68,6 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
     return filtered_lfs
 
 
-
 def extract_label_keywords(content, cardinality=2):
     """
     Extract label and keywords from contents returned by LLMs
@@ -88,10 +86,7 @@ def extract_label_keywords(content, cardinality=2):
         return None, None
 
     keyword_idx = tokens.index("KEYWORDS") + 2
-    if "EXPLANATION" in tokens:
-        last_keyword_pos = tokens.index("EXPLANATION")
-    else:
-        last_keyword_pos = len(tokens)
+    last_keyword_pos = tokens.index("LABEL")
     keyword_list = []
     for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
         keyword = tokens[idx]
@@ -102,46 +97,6 @@ def extract_label_keywords(content, cardinality=2):
 
 
 
-
-def extract_label(content, cardinality=2):
-    """
-    Extract label and keywords from contents returned by LLMs
-    :param content: returned contents
-    :return: label, keyword_list
-    """
-    tokens = nltk.word_tokenize(content)
-    classes = range(cardinality)
-    if "LABEL" not in tokens:
-        return None,
-
-    label_idx = tokens.index("LABEL") + 2
-    if label_idx < len(tokens) and tokens[label_idx].isdigit() and int(tokens[label_idx]) in classes:
-        label = int(tokens[label_idx])
-    else:
-        return None
-
-    return label
-
-def extract_keywords(content, cardinality=2):
-    """
-    Extract label and keywords from contents returned by LLMs
-    :param content: returned contents
-    :return: label, keyword_list
-    """
-    tokens = nltk.word_tokenize(content)
-    classes = range(cardinality)
-    if "KEYWORDS" not in tokens:
-        return None
-
-
-    keyword_idx = tokens.index("KEYWORDS") + 2
-    keyword_list = []
-    for idx in np.arange(len(tokens) - keyword_idx) + keyword_idx:
-        keyword = tokens[idx]
-        if keyword != "NA":
-            keyword_list.append(keyword)
-
-    return keyword_list
 class SentimentLexicon:
     def __init__(self, data_root):
         pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
@@ -183,9 +138,11 @@ class SentimentLexicon:
         return tokens
 
 
-class ChatGPTLFAgent:
+class Llama2LFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
-                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",**kwargs):
+                 acc_threshold=0.6, data_root="./data", seed=0, model="meta-llama/Llama-2-70b-chat-hf",api_key_path="anyscale.key",
+                 display=True, repeats=1, example_per_class=1, example_selection="random", return_explanation=False, play_expert_role=False,
+                 dp_aware=False,tokenizer_path="./llama_tokenizer", **kwargs):
         """
         LF Agent using ChatGPT
         :param train_dataset:
@@ -206,25 +163,57 @@ class ChatGPTLFAgent:
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
         self.model = model
+        self.display = display
+        self.repeats = repeats
+        self.example_per_class = example_per_class
+        self.example_selection = example_selection
+        self.return_explanation = return_explanation
+        self.play_expert_role = play_expert_role
+        self.dp_aware = dp_aware
         self.kwargs = kwargs
-        openai.api_key_path = api_key_path
+        with open(api_key_path) as f:
+            self.api_key = f.read().strip()
+        self.system_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
+                                          example_per_class=self.example_per_class,
+                                          example_selection=self.example_selection,
+                                          explanation=self.return_explanation,
+                                          expert_role=self.play_expert_role,
+                                          dp_aware=self.dp_aware)
+        if self.display:
+            print("ChatGPT system prompt:")
+            print(self.system_prompt)
 
 
     def create_lf(self, query_idx):
-        item = self.train_dataset.examples[query_idx]["text"]
+        if self.kwargs["dataset_name"] in relation_extraction_datasets:
+            text = self.train_dataset.examples[query_idx]["text"]
+            entity1 = self.train_dataset.examples[query_idx]["entity1"]
+            entity2 = self.train_dataset.examples[query_idx]["entity2"]
+            item = "{} <{}> <{}>".format(text, entity1, entity2)
+        else:
+            item = self.train_dataset.examples[query_idx]["text"]
+
         candidate_lfs = []
         if self.lf_type == "keyword":
-            system_prompt = get_system_prompt(self.train_dataset.dataset_name)
+            # system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": item["sentence"]}
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": item}
             ]
             for i in range(self.repeats): # try multiple times if first attempt fails
-                response = openai.ChatCompletion.create(
-                    model=self.model,
-                    messages = messages
-                )
-                response_content = response['choices'][0]["message"]["content"]
+                try:
+                    response = openai.ChatCompletion.create(
+                            api_base = "https://api.endpoints.anyscale.com/v1",
+                            api_key=self.api_key,
+                            model=self.model,
+                            messages= messages,
+                            temperature=0.1,
+                            max_tokens=50
+                        )
+                    response_content = response['choices'][0]["message"]["content"]
+                except openai.error.OpenAIError:
+                    response_content = ""
+
                 if self.display:
                     print("Response: ", response_content)
 
@@ -248,19 +237,18 @@ class ChatGPTLFAgent:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
         else:
-            lf = None
+            lf = KeywordLF(keyword="NA", label=label)
 
         return lf
 
 
-
-
-
-class Llama2LFAgent:
+class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
-                 acc_threshold=0.6, data_root="./data", seed=0, model="",dtype=torch.bfloat16,repeats=1,display=True,**kwargs):
+                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",
+                 example_per_class=1, example_selection="random", return_explanation=False, play_expert_role=False,
+                 dp_aware=False, display=True, repeats=1, **kwargs):
         """
-        LF Agent using Llama2
+        LF Agent using ChatGPT
         :param train_dataset:
         :param valid_dataset:
         :param lf_type:
@@ -278,70 +266,71 @@ class Llama2LFAgent:
         self.lfs = list()  # history LFs
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
-        print(model)
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.tokenizer = AutoTokenizer.from_pretrained(model,  local_files_only=True)
-        self.model = LlamaForCausalLM.from_pretrained(model, local_files_only=True,torch_dtype=dtype)
-        self.model.to(self.device)
-        self.kwargs = kwargs
-        self.repeats = repeats
+        self.model = model
         self.display = display
+        self.repeats = repeats
+        self.example_per_class = example_per_class
+        self.example_selection = example_selection
+        self.return_explanation = return_explanation
+        self.play_expert_role = play_expert_role
+        self.dp_aware = dp_aware
+        self.kwargs = kwargs
+        openai.api_key_path = api_key_path
+        self.system_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
+                                          example_per_class=self.example_per_class,
+                                          example_selection=self.example_selection,
+                                          explanation=self.return_explanation,
+                                          expert_role=self.play_expert_role,
+                                          dp_aware=self.dp_aware)
+        if self.display:
+            print("ChatGPT system prompt:")
+            print(self.system_prompt)
+
     def create_lf(self, query_idx):
-        def predict(prompt, n=1,new_token=20,temperature=0.25,top_p=1.0,repetition_penalty=1):
-            input_text = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
-            total_tokens = input_text.shape[1]+ new_token
-            with torch.no_grad():
-                  outputs = self.model.generate(
-                  input_text,
-                  num_return_sequences=n,
-                  max_length=total_tokens,
-                  do_sample=True,
-                  temperature=temperature,
-                  top_p=top_p,
-                  repetition_penalty=repetition_penalty)
-            out = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
-            start_idx = len(prompt)
-            out = [i[start_idx:] for i in out]
-            return out
-        item = self.train_dataset.examples[query_idx]["text"]
+        if self.kwargs["dataset_name"] in relation_extraction_datasets:
+            text = self.train_dataset.examples[query_idx]["text"]
+            entity1 = self.train_dataset.examples[query_idx]["entity1"]
+            entity2 = self.train_dataset.examples[query_idx]["entity2"]
+            item = "{} <{}> <{}>".format(text, entity1, entity2)
+        else:
+            item = self.train_dataset.examples[query_idx]["text"]
+
         candidate_lfs = []
         if self.lf_type == "keyword":
-            label = None
-            keyword_prompt,label_prompt = get_single_task_system_prompt(self.kwargs["dataset_name"])
-            full_prompt = label_prompt + "\n" + item
-            response_contents = predict(full_prompt,n=self.repeats)
-            for response_content in response_contents:
+            # system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": item}
+            ]
+            for i in range(self.repeats):  # try multiple times if first attempt fails
+                try:
+                    response = openai.ChatCompletion.create(
+                        model=self.model,
+                        messages=messages
+                    )
+                    response_content = response['choices'][0]["message"]["content"]
+                except openai.error.OpenAIError:
+                    response_content = ""
+
                 if self.display:
                     print("Response: ", response_content)
 
-                label = extract_label(response_content, self.train_dataset.n_class)
+                label, keyword_list = extract_label_keywords(response_content, self.train_dataset.n_class)
                 if label is not None:
                     break
-        
-            if label is not None:
-                full_prompt = keyword_prompt + "\n" + item 
-                response_contents = predict(full_prompt,n=self.repeats)
-                for response_content in response_contents:
-                    if self.display:
-                        print("Response: ", response_content)
 
-                    keyword_list = extract_keywords(response_content, self.train_dataset.n_class)
-                    if keyword_list is not None and len(keyword_list)>0:
-                        break
-                if keyword_list is None or (len(keyword_list)==0) :
-                    keyword_list = ["NA"]
-                
-                
+            if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item:
+                    if keyword in item and re.search('[a-zA-Z]', keyword):
                         lf = KeywordLF(keyword=keyword, label=label)
                         candidate_lfs.append(lf)
+
         else:
             raise ValueError ("LF Type not supported.")
 
         filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,
                                             self.acc_threshold, self.sentiment_lexicon, self.lfs)
-        
+
         if len(filtered_lfs) > 0:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
@@ -349,6 +338,7 @@ class Llama2LFAgent:
             lf = KeywordLF(keyword="NA", label=label)
 
         return lf
+
 
 
 class SimLFAgent:
@@ -384,7 +374,7 @@ class SimLFAgent:
         tokens = nltk.word_tokenize(item.lower())
         candidate_lfs = []
         if self.lf_type == "keyword":
-            for token in item["token"]:
+            for token in tokens:
                 lf = KeywordLF(keyword=token, label=label)
                 candidate_lfs.append(lf)
         else:
@@ -397,7 +387,7 @@ class SimLFAgent:
             lf = self.rng.choice(filtered_lfs)
             self.lfs.append(lf)
         else:
-            lf = None
+            lf = KeywordLF(keyword="NA", label=label)
 
         return lf
 

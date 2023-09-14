@@ -1,5 +1,3 @@
-numpy
-ws-benchmark==1.1.2rc0
 pytokenizations
 transformers[sentencepiece]
 datasets

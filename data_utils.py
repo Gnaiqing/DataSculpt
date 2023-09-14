@@ -16,10 +16,7 @@ import argparse
 from wrench.dataset import load_dataset, BaseDataset
 import pdb
 
-feature_name_dict = {
-    "sst2": ("sentence",),
-    "mrpc": ("sentence1", "sentence2")
-}
+relation_extraction_datasets = ("chemprot", "cdr")
 
 
 def create_bert_vector(raw_texts, save_path):
@@ -51,11 +48,12 @@ def tr_val_te_split(xs, ys, test_ratio, valid_ratio, rand_state):
 
 def build_revert_index(dataset):
     revert_index = {}
-    count_vectorizer = CountVectorizer(strip_accents='ascii')
     xs_text_tr = [dataset.examples[idx]["text"] for idx in range(len(dataset))]
+    count_vectorizer = CountVectorizer(strip_accents='ascii')
     count_vectorizer.fit(xs_text_tr)
     analyzer = count_vectorizer.build_analyzer()
     xs_token_tr = np.array([analyzer(text) for text in xs_text_tr], dtype='object')
+    # xs_token_tr = np.array([nltk.word_tokenize(text.lower()) for text in xs_text_tr], dtype='object')
 
     for idx in range(len(dataset)):
         for token in xs_token_tr[idx]:
@@ -797,7 +795,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="glue")
     parser.add_argument("--dataset-name", type=str, default="sst2")
-    parser.add_argument("--feature-extractor",type=str, default="tfidf")
+    parser.add_argument("--feature-extractor", type=str, default="tfidf")
     args = parser.parse_args()
     if args.dataset_path != "glue":
         train_dataset, valid_dataset, test_dataset, warmup_dataset = load_local_data(args.dataset_path,

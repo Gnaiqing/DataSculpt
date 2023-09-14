@@ -1,16 +1,15 @@
 data_path=$1
-model=$2
+# model=$2
 # sms Yelp AmazonReview
 # 0.7 0.8s
 # --save-wandb
-for data_name in youtube sms Yelp AmazonReview; do
-  for model_size in 13b; do
-      model_path=$model-$model_size
-      echo $model_path
+llm_model="meta-llama/Llama-2-70b-chat-hf"
+model=llama2
+echo $llm_model
+for data_name in youtube; do
        for acc in 0.6; do
-          python main.py --dataset-path $data_path --dataset-name $data_name --lf-acc-threshold $acc --lf-agent $model --lf-llm-model $model_path --use-soft-labels --save-wandb
+        python main.py --dataset-path $data_path --dataset-name $data_name --lf-acc-threshold $acc --lf-agent $model --lf-llm-model $llm_model --use-soft-labels --save-wandb  --lf-filter acc unique --dp-aware --feature-extractor tfidf
       done
-  done
 done
 
 #    parser.add_argument("--dataset-path", type=str, default="glue", help="dataset path (or benchmark name)")
