@@ -5,6 +5,7 @@ from sklearn.metrics import f1_score, accuracy_score
 
 optuna.logging.disable_default_handler()
 
+
 def get_label_model(method, cardinality=2):
     if method == "mv":
         return MajorityLabelVoter(cardinality=cardinality)

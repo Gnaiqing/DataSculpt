@@ -31,9 +31,9 @@ def evaluate_lfs(labels, L_train, lf_classes, n_class=2):
     n_active = np.sum(L_train != -1, axis=0)
     n_correct = np.sum(L_train == labels.reshape(-1,1), axis=0)
     lf_covs = n_active / len(labels)
-    lf_accs = n_correct / n_active
+    lf_accs = np.divide(n_correct, n_active, out=np.repeat(np.nan, len(n_active)), where=n_active!=0)
     lf_cov_avg = np.mean(lf_covs)
-    lf_acc_avg = np.mean(lf_accs)
+    lf_acc_avg = np.mean(lf_accs[lf_covs != 0])
     # evaluate the LF quality per class
     lf_num_pc = []
     lf_acc_avg_pc = []
@@ -43,7 +43,7 @@ def evaluate_lfs(labels, L_train, lf_classes, n_class=2):
         active_lfs = lf_classes == c
         lf_num_pc.append(np.sum(active_lfs))
         if np.sum(active_lfs) != 0:
-            lf_acc_avg_pc.append(np.mean(lf_accs[active_lfs]))
+            lf_acc_avg_pc.append(np.nanmean(lf_accs[active_lfs]))
             lf_cov_avg_pc.append(np.mean(lf_covs[active_lfs]))
             L_train_pc = L_train[:, active_lfs]
             cov_pc = np.mean(np.max(L_train_pc, axis=1) == c)

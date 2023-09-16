@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 from sklearn.utils import shuffle
 from sklearn.semi_supervised import LabelSpreading, LabelPropagation, SelfTrainingClassifier
@@ -13,6 +14,11 @@ def get_discriminator(model_type, prob_labels, params=None, seed=None, ssl_metho
             return LogReg(prob_labels, params, seed, n_class=n_class)
         else:
             return LogRegSSL(params, seed, n_class=n_class)
+    elif model_type == "knn":
+        if ssl_method is None:
+            return KNN(prob_labels, n_class=n_class, metric="cosine")
+        else:
+            raise ValueError('discriminator model not supported.')
     else:
         raise ValueError('discriminator model not supported.')
 
@@ -63,6 +69,38 @@ class Classifier:
 
     def predict(self, xs):
         raise NotImplementedError
+
+
+class KNN(Classifier):
+    def __init__(self, prob_labels, n_class=2, **kwargs):
+        self.prob_labels = prob_labels
+        self.n_class = n_class
+        self.kwargs = kwargs
+        self.model = KNeighborsClassifier(**kwargs)
+
+    def tune_params(self, x_train, y_train, x_valid, y_valid, sample_weights=None, scoring='acc'):
+        pass
+
+    def fit(self, xs, ys, sample_weights=None):
+        self.model.fit(xs, ys)
+
+    def predict(self, xs):
+        output = self.model.predict(xs)
+        if self.prob_labels:
+            output = np.argmax(output, axis=1)
+
+        return output
+
+    def predict_proba(self, xs):
+        if self.prob_labels:
+            output = self.model.predict(xs)
+            output = output / np.sum(output, axis=1)
+        else:
+            output = self.model.predict_proba(xs)
+        return output
+
+
+
 
 
 class LogReg(Classifier):

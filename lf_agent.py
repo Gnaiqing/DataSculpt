@@ -5,7 +5,7 @@ from numpy.random import default_rng
 from lf_family import KeywordLF
 import openai
 from gpt_utils import create_prompt
-from data_utils import relation_extraction_datasets
+from data_utils import relation_extraction_datasets, preprocess_text
 import nltk
 import re
 
@@ -19,8 +19,8 @@ def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
         raise ValueError("LF agent not supported.")
 
 
-def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
-                         acc_threshold, sentiment_lexicon, prev_lfs):
+def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
+                         valid_dataset, acc_threshold, prev_lfs):
     """
     Filter a subset of candidate lfs that can be added given previous LFs
 
@@ -34,23 +34,17 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, valid_dataset,
     """
     mask = np.repeat(True, len(candidate_lfs))
 
+    for j, lf in enumerate(candidate_lfs):
+        train_cov, _ = lf.get_cov_acc(train_dataset)
+        if train_cov == 0:
+            mask[j] = False
+
     if "acc" in filter_methods:
         for j, lf in enumerate(candidate_lfs):
             if not mask[j]:
                 continue
             cov, acc = lf.get_cov_acc(valid_dataset)
-            if np.isnan(acc) or acc < acc_threshold:
-                mask[j] = False
-
-    if "sentiment" in filter_methods:
-        for j, lf in enumerate(candidate_lfs):
-            if not mask[j]:
-                continue
-            if lf.label == 0:
-                tokens = sentiment_lexicon.neg_tokens
-            else:
-                tokens = sentiment_lexicon.pos_tokens
-            if lf.keyword not in tokens:
+            if cov > 0 and acc < acc_threshold:
                 mask[j] = False
 
     if "unique" in filter_methods:
@@ -72,110 +66,68 @@ def extract_label_keywords(content, cardinality=2):
     :param content: returned contents
     :return: label, keyword_list
     """
-    tokens = nltk.word_tokenize(content)
-    classes = range(cardinality)
-    if "LABEL" not in tokens or "KEYWORDS" not in tokens:
-        return None, None
-
-    label_idx = tokens.index("LABEL") + 2
-    if label_idx < len(tokens) and tokens[label_idx].isdigit() and int(tokens[label_idx]) in classes:
-        label = int(tokens[label_idx])
+    label_match = re.search("LABEL:\s*\d+", content)
+    if label_match:
+        st, ed = label_match.span()
+        label = int(label_match.string[st+6:ed])
+        if label not in range(cardinality):
+            label = None
     else:
-        return None, None
+        label = None
 
-    keyword_idx = tokens.index("KEYWORDS") + 2
-    last_keyword_pos = tokens.index("LABEL")
-    keyword_list = []
-    for idx in np.arange(last_keyword_pos - keyword_idx) + keyword_idx:
-        keyword = tokens[idx]
-        if keyword != "NA":
-            keyword_list.append(keyword.lower())
+    keyword_match = re.search("KEYWORDS:.*\n", content)
+    if keyword_match:
+        st, ed = keyword_match.span()
+        keyword_list = [x.strip() for x in keyword_match.string[st+9:ed].split(',')]
+
+    else:
+        keyword_list = []
 
     return label, keyword_list
 
 
-
-class SentimentLexicon:
-    def __init__(self, data_root):
-        pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
-        neg_words_file = os.path.join(data_root, 'opinion-lexicon-English/negative-words.txt')
-
-        pos_tokens = list()
-        neg_tokens = list()
-        with open(pos_words_file, encoding='ISO-8859-1') as f:
-            for i, line in enumerate(f):
-                if i >= 30:
-                    token = line.rstrip()
-                    pos_tokens.append(token)
-        with open(neg_words_file, encoding='ISO-8859-1') as f:
-            for i, line in enumerate(f):
-                if i >= 31:
-                    token = line.rstrip()
-                    neg_tokens.append(token)
-
-        token_sentiment = {token: 1 for token in pos_tokens}
-        token_sentiment.update({token: -1 for token in neg_tokens})
-
-        self.pos_tokens = pos_tokens
-        self.neg_tokens = neg_tokens
-        self.token_sentiment = token_sentiment
-
-    def tokens_to_sentiments(self, tokens):
-        """Return sentiments of tokens in a sentence
-        """
-        sentiments = np.array([self.token_sentiment.get(token, 0) for token in tokens])
-
-        return sentiments
-
-    def tokens_with_sentiment(self, tokens, sentiment):
-        """Return tokens with specified sentiment
-        """
-        sentiments = self.tokens_to_sentiments(tokens)
-        tokens = np.array(tokens)[sentiments == sentiment]
-
-        return tokens
-
-
 class ChatGPTLFAgent:
-    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
-                 acc_threshold=0.6, data_root="./data", seed=0, model="gpt-3.5-turbo", api_key_path="openai-api.key",
-                 example_per_class=1, example_selection="random", return_explanation=False, play_expert_role=False,
-                 dp_aware=False, display=True, repeats=1, **kwargs):
+    def __init__(self, train_dataset, valid_dataset, **kwargs):
         """
         LF Agent using ChatGPT
-        :param train_dataset:
-        :param valid_dataset:
-        :param lf_type:
-        :param filter_methods:
-        :param acc_threshold:
-        :param data_root:
-        :param seed:
-        :param kwargs:
+        :param train_dataset: training dataset to label
+        :param valid_dataset: validation dataset
+        :param kwargs: arguments
         """
         self.train_dataset = train_dataset
         self.valid_dataset = valid_dataset
-        self.lf_type = lf_type
-        self.filter_methods = filter_methods
-        self.sentiment_lexicon = SentimentLexicon(data_root)
-        self.lfs = list()  # history LFs
-        self.acc_threshold = acc_threshold
-        self.rng = default_rng(seed)
-        self.model = model
-        self.display = display
-        self.repeats = repeats
-        self.example_per_class = example_per_class
-        self.example_selection = example_selection
-        self.return_explanation = return_explanation
-        self.play_expert_role = play_expert_role
-        self.dp_aware = dp_aware
         self.kwargs = kwargs
-        openai.api_key_path = api_key_path
-        self.system_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
-                                          example_per_class=self.example_per_class,
-                                          example_selection=self.example_selection,
-                                          explanation=self.return_explanation,
-                                          expert_role=self.play_expert_role,
-                                          dp_aware=self.dp_aware)
+        # API related arguments
+        self.model = kwargs.get("model", "gpt-3.5-turbo")
+        openai.api_key_path = kwargs.get("api_key_path", "openai-api.key")
+        self.repeats = kwargs.get("repeats", 1)
+        self.example_per_class = kwargs.get("example_per_class", 1)
+        self.example_selection = kwargs.get("example_selection", "random")
+        self.return_explanation = kwargs.get("return_explanation", False)
+        self.play_expert_role = kwargs.get("play_expert_role", False)
+        self.dp_aware = kwargs.get("dp_aware", False)
+        self.n_completion = kwargs.get("n_completion")
+        self.temperature = kwargs.get("temperature")
+        self.top_p = kwargs.get("top_p")
+        # Label function related arguments
+        self.lf_type = kwargs.get("lf_type", "keyword")
+        self.filter_methods = kwargs.get("filter_methods", ("acc", "unique"))
+        self.lfs = list()  # history LFs
+        self.acc_threshold = kwargs.get("acc_threshold", 0.6)
+        self.stop_words = kwargs.get("stop_words")
+        self.stemming = kwargs.get("stemming")
+        self.max_ngram = kwargs.get("max_ngram", 1)
+        self.max_lf_per_iter = kwargs.get("max_lf_per_iter", 1)
+        # other arguments
+        self.display = kwargs.get("display", True)
+        self.seed = kwargs.get("seed", 0)
+        self.rng = default_rng(self.seed)
+        self.system_prompt, self.example_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
+                                                                example_per_class=self.example_per_class,
+                                                                example_selection=self.example_selection,
+                                                                explanation=self.return_explanation,
+                                                                expert_role=self.play_expert_role,
+                                                                dp_aware=self.dp_aware)
         if self.display:
             print("ChatGPT system prompt:")
             print(self.system_prompt)
@@ -185,58 +137,74 @@ class ChatGPTLFAgent:
             text = self.train_dataset.examples[query_idx]["text"]
             entity1 = self.train_dataset.examples[query_idx]["entity1"]
             entity2 = self.train_dataset.examples[query_idx]["entity2"]
-            item = "{} <{}> <{}>".format(text, entity1, entity2)
+            user_prompt = "{} User: {} <{}> <{}>\n Response: ".format(self.example_prompt, text, entity1, entity2)
         else:
-            item = self.train_dataset.examples[query_idx]["text"]
+            text = self.train_dataset.examples[query_idx]["text"]
+            user_prompt = "{} User: {}\n Response: ".format(self.example_prompt, text)
 
         candidate_lfs = []
         if self.lf_type == "keyword":
-            # system_prompt = get_system_prompt(self.kwargs["dataset_name"], prompt_version=self.prompt_version)
             messages = [
                 {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": item}
+                {"role": "user", "content": user_prompt}
             ]
+            label, keyword_list = None, []
             for i in range(self.repeats):  # try multiple times if first attempt fails
                 try:
                     response = openai.ChatCompletion.create(
                         model=self.model,
-                        messages=messages
+                        messages=messages,
+                        top_p=self.top_p,
+                        temperature=self.temperature,
+                        n=self.n_completion
                     )
-                    response_content = response['choices'][0]["message"]["content"]
                 except openai.error.OpenAIError:
-                    response_content = ""
+                    continue
 
-                if self.display:
-                    print("Response: ", response_content)
+                output_labels = []
+                for j in range(self.n_completion):
+                    response_content = response['choices'][j]["message"]["content"]
+                    if self.display:
+                        print("Response {}: {}\n".format(j, response_content))
+                    label, keywords = extract_label_keywords(response_content, self.train_dataset.n_class)
+                    if label in range(self.train_dataset.n_class):
+                        output_labels.append(label)
+                    keyword_list += keywords
 
-                label, keyword_list = extract_label_keywords(response_content, self.train_dataset.n_class)
-                if label is not None:
+                if len(output_labels) > 0:
+                    label = np.bincount(output_labels).argmax()
                     break
 
+            keyword_list = np.unique(keyword_list)
             if label is not None:
                 for keyword in keyword_list:
-                    if keyword in item and re.search('[a-zA-Z]', keyword):
-                        lf = KeywordLF(keyword=keyword, label=label)
+                    processed_keyword = preprocess_text(keyword, self.stop_words, self.stemming)
+                    n_gram = len(processed_keyword.split(" "))
+                    if n_gram <= self.max_ngram:
+                        lf = KeywordLF(keyword=processed_keyword, label=label)
                         candidate_lfs.append(lf)
 
         else:
-            raise ValueError ("LF Type not supported.")
+            raise ValueError("LF Type not supported.")
 
-        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,
-                                            self.acc_threshold, self.sentiment_lexicon, self.lfs)
+        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset,
+                                            self.valid_dataset, self.acc_threshold, self.lfs)
 
-        if len(filtered_lfs) > 0:
-            lf = self.rng.choice(filtered_lfs)
-            self.lfs.append(lf)
+        if self.max_lf_per_iter is not None and self.max_lf_per_iter < len(filtered_lfs):
+            filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
+
+        if len(filtered_lfs) == 0:
+            filtered_lfs = [KeywordLF("NA", label)]
         else:
-            lf = KeywordLF(keyword="NA", label=label)
+            for lf in filtered_lfs:
+                self.lfs.append(lf)
 
-        return lf
+        return filtered_lfs
 
 
 class SimLFAgent:
     def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
-                 acc_threshold=0.6, data_root="./data", seed=0, **kwargs):
+                 acc_threshold=0.6, seed=0, **kwargs):
         """
         Simulated LF Agent that return a LF with accuracy above threshold
         :param train_dataset: unlabeled training set
@@ -256,10 +224,10 @@ class SimLFAgent:
         self.valid_dataset = valid_dataset
         self.lf_type = lf_type
         self.filter_methods = filter_methods
-        self.sentiment_lexicon = SentimentLexicon(data_root)
         self.lfs = list() # history LFs
         self.acc_threshold = acc_threshold
         self.rng = default_rng(seed)
+        self.max_lf_per_iter = kwargs.get("max_lf_per_iter", 1)
 
     def create_lf(self, query_idx):
         item = self.train_dataset.examples[query_idx]["text"]
@@ -273,18 +241,59 @@ class SimLFAgent:
         else:
             raise ValueError ("LF Type not supported.")
 
-        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.valid_dataset,self.acc_threshold,
-                                            self.sentiment_lexicon, self.lfs)
+        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset, self.valid_dataset,
+                                            self.acc_threshold, self.lfs)
 
-        if len(filtered_lfs) > 0:
-            lf = self.rng.choice(filtered_lfs)
-            self.lfs.append(lf)
+        if self.max_lf_per_iter is not None and self.max_lf_per_iter < len(filtered_lfs):
+            filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
+
+        if len(filtered_lfs) == 0:
+            filtered_lfs = [KeywordLF("NA", label)]
         else:
-            lf = KeywordLF(keyword="NA", label=label)
+            for lf in filtered_lfs:
+                self.lfs.append(lf)
 
-        return lf
+        return filtered_lfs
 
 
-
+# class SentimentLexicon:
+#     def __init__(self, data_root):
+#         pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
+#         neg_words_file = os.path.join(data_root, 'opinion-lexicon-English/negative-words.txt')
+#
+#         pos_tokens = list()
+#         neg_tokens = list()
+#         with open(pos_words_file, encoding='ISO-8859-1') as f:
+#             for i, line in enumerate(f):
+#                 if i >= 30:
+#                     token = line.rstrip()
+#                     pos_tokens.append(token)
+#         with open(neg_words_file, encoding='ISO-8859-1') as f:
+#             for i, line in enumerate(f):
+#                 if i >= 31:
+#                     token = line.rstrip()
+#                     neg_tokens.append(token)
+#
+#         token_sentiment = {token: 1 for token in pos_tokens}
+#         token_sentiment.update({token: -1 for token in neg_tokens})
+#
+#         self.pos_tokens = pos_tokens
+#         self.neg_tokens = neg_tokens
+#         self.token_sentiment = token_sentiment
+#
+#     def tokens_to_sentiments(self, tokens):
+#         """Return sentiments of tokens in a sentence
+#         """
+#         sentiments = np.array([self.token_sentiment.get(token, 0) for token in tokens])
+#
+#         return sentiments
+#
+#     def tokens_with_sentiment(self, tokens, sentiment):
+#         """Return tokens with specified sentiment
+#         """
+#         sentiments = self.tokens_to_sentiments(tokens)
+#         tokens = np.array(tokens)[sentiments == sentiment]
+#
+#         return tokens
 
 
