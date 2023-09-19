@@ -37,8 +37,8 @@ def create_prompt(dataset_name, dataset, example_per_class=1, example_selection=
         task_info = "In each iteration, the user will provide a biomedical statement, followed with two chemicals occured in that statement." \
                     "Please decide the relationship between the two chemicals based on the statement."
     elif dataset_name == "cdr":
-        task_info = "In each iteration, the user will provide a biomedical statement, followed with a chemical and a disease occured in " \
-                    "that statement. Please decide whether there is a causal relationship between the chemical and the disease based on the statement."
+        task_info = "In each iteration, the user will provide a biomedical passage, followed with a question asking whether a chemical causes " \
+                    "a disease. Please decide whether the chemical causes the disease based on the passage."
 
     if "expert_role" in kwargs and kwargs["expert_role"]:
         system_role = f"{task} expert"

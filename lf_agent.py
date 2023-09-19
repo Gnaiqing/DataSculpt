@@ -133,11 +133,17 @@ class ChatGPTLFAgent:
             print(self.system_prompt)
 
     def create_lf(self, query_idx):
-        if self.kwargs["dataset_name"] in relation_extraction_datasets:
+        if self.kwargs["dataset_name"] == "cdr":
             text = self.train_dataset.examples[query_idx]["text"]
             entity1 = self.train_dataset.examples[query_idx]["entity1"]
             entity2 = self.train_dataset.examples[query_idx]["entity2"]
-            user_prompt = "{} User: {} <{}> <{}>\n Response: ".format(self.example_prompt, text, entity1, entity2)
+            user_prompt = "{} User: {}. Does {} cause{}?\n Response: ".format(self.example_prompt, text, entity1, entity2)
+        elif self.kwargs["dataset_name"] == "chemprot":
+            text = self.train_dataset.examples[query_idx]["text"]
+            entity1 = self.train_dataset.examples[query_idx]["entity1"]
+            entity2 = self.train_dataset.examples[query_idx]["entity2"]
+            user_prompt = "{} User: {}. What is the relationship between {} and {}?\n Response: ".format(self.example_prompt,
+                                                                                                        text, entity1, entity2)
         else:
             text = self.train_dataset.examples[query_idx]["text"]
             user_prompt = "{} User: {}\n Response: ".format(self.example_prompt, text)

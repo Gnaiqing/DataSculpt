@@ -24,10 +24,11 @@ def get_label_model(method, cardinality=2):
 
 
 class Snorkel:
-    def __init__(self, seed=None, **kwargs):
+    def __init__(self, seed=None, calibration="isotonic", **kwargs):
         self.search_space = kwargs['search_space']
         self.n_trials = kwargs.get('n_trials', 100)
         self.cardinality = kwargs['cardinality']
+        self.calibration = calibration
         self.best_params = None
         self.model = None
         self.kwargs = kwargs
@@ -46,6 +47,11 @@ class Snorkel:
 
     def fit(self, L_tr, L_val, ys_val, scoring='logloss', tune_label_model=True):
         search_space = self.search_space
+        # train_covered_indices = np.max(L_tr, axis=1) != -1
+        # valid_covered_indices = np.max(L_val, axis=1) != -1
+        # L_tr_filtered = L_tr[train_covered_indices, :]
+        # L_val_filtered = L_val[valid_covered_indices, :]
+        # ys_val_filtered = ys_val[valid_covered_indices]
 
         def objective(trial):
             suggestions = {key: trial.suggest_categorical(key, search_space[key]) for key in search_space}
@@ -81,8 +87,9 @@ class Snorkel:
             self.best_params = study.best_params
         else:
             self.best_params = {}
-        self.model = LabelModel(cardinality=self.cardinality,verbose=False)
+        self.model = LabelModel(cardinality=self.cardinality, verbose=False)
         self.model.fit(L_train=L_tr, Y_dev=ys_val, **self.best_params, seed=self.seed, progress_bar=False)
+
 
     def predict_proba(self, L):
         return self.model.predict_proba(L)
