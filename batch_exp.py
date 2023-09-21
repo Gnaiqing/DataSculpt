@@ -2,11 +2,11 @@ import os
 data_root = "./data/wrench_data"
 datasets = [
     # "youtube",
-    "sms",
+    # "sms",
     # "imdb",
     # "yelp",
     # "chemprot",
-    # "cdr"
+    "cdr"
 ]
 
 relation_extraction_datasets = ("chemprot", "cdr")
@@ -31,10 +31,10 @@ for dataset in datasets:
           f"--lf-agent {agent} --lf-acc-threshold {acc} --tune-metric {metric} --max-ngram 3 --max-lf-per-iter 100 --display --save-wandb"
     print(cmd)
     os.system(cmd)
-    # # chain of thought
-    # cot_cmd = cmd + " --return-explanation"
-    # print(cot_cmd)
-    # os.system(cot_cmd)
+    # chain of thought
+    cot_cmd = cmd + " --return-explanation"
+    print(cot_cmd)
+    os.system(cot_cmd)
     # # self-consistencey
     # sc_cmd = cot_cmd + " --n-completion 40"
     # print(sc_cmd)

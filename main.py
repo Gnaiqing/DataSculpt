@@ -1,5 +1,5 @@
 import argparse
-from data_utils import load_wrench_data, relation_extraction_datasets
+from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
 from lf_family import create_label_matrix
@@ -79,11 +79,17 @@ def main(args):
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
-                if args.dataset_name in relation_extraction_datasets:
+                if args.dataset_name == "cdr":
                     text = train_dataset.examples[query_idx]["text"]
                     entity1 = train_dataset.examples[query_idx]["entity1"]
                     entity2 = train_dataset.examples[query_idx]["entity2"]
-                    print("\nQuery [{}]: {} <{}> <{}>".format(query_idx, text, entity1, entity2))
+                    print("\nQuery [{}]: {}. Does {} cause {}?".format(query_idx, text, entity1, entity2))
+                elif args.dataset_name == "chemprot":
+                    text = train_dataset.examples[query_idx]["text"]
+                    entity1 = train_dataset.examples[query_idx]["entity1"]
+                    entity2 = train_dataset.examples[query_idx]["entity2"]
+                    print("\nQuery [{}]: {}. What is the relationship between {} and {}?".format(query_idx,
+                                                                                                 text, entity1, entity2))
                 else:
                     print("\nQuery [{}]: {}".format(query_idx,train_dataset.examples[query_idx]["text"]))
             cur_lfs = lf_agent.create_lf(query_idx)
@@ -110,12 +116,14 @@ def main(args):
                 L_val = create_label_matrix(valid_dataset, lfs)
                 if np.min(lf_labels) != np.max(lf_labels):
                     if len(lfs) > 3:
-                        label_model = get_label_model(args.label_model, train_dataset.n_class)
+                        label_model = get_label_model(args.label_model, train_dataset.n_class, calibration=args.lm_calib)
                     else:
                         label_model = get_label_model("mv", train_dataset.n_class)
 
                     if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels), tune_label_model=args.tune_label_model)
+                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                        tune_label_model=args.tune_label_model,
+                                        scoring=args.tune_metric)
 
             if t % args.train_iter == args.train_iter - 1:
                 if label_model is not None:
@@ -267,6 +275,7 @@ if __name__ == '__main__':
     parser.add_argument("--sampler", type=str, default="passive", help="sample selector")
     # data programming
     parser.add_argument("--label-model", type=str, default="snorkel", help="label model used in DP paradigm")
+    parser.add_argument("--lm-calib", type=str, default="isotonic", help="calibration method for label model")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
     parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])

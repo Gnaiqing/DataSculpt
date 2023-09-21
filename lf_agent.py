@@ -131,6 +131,8 @@ class ChatGPTLFAgent:
         if self.display:
             print("ChatGPT system prompt:")
             print(self.system_prompt)
+            print("Example prompt:")
+            print(self.example_prompt)
 
     def create_lf(self, query_idx):
         if self.kwargs["dataset_name"] == "cdr":

@@ -34,10 +34,10 @@ def create_prompt(dataset_name, dataset, example_per_class=1, example_selection=
     elif dataset_name == "yelp":
         task_info = "In each iteration, the user will provide a product review. Please decide whether the review is positive or negative."
     elif dataset_name == "chemprot":
-        task_info = "In each iteration, the user will provide a biomedical statement, followed with two chemicals occured in that statement." \
+        task_info = "In each iteration, the user will provide a biomedical statement, followed by two chemicals occured in that statement." \
                     "Please decide the relationship between the two chemicals based on the statement."
     elif dataset_name == "cdr":
-        task_info = "In each iteration, the user will provide a biomedical passage, followed with a question asking whether a chemical causes " \
+        task_info = "In each iteration, the user will provide a biomedical passage, followed by a question asking whether a chemical causes " \
                     "a disease. Please decide whether the chemical causes the disease based on the passage."
 
     if "expert_role" in kwargs and kwargs["expert_role"]:
@@ -106,14 +106,14 @@ LABEL: <Predicted label>
     if "dp_aware" in kwargs and kwargs["dp_aware"]:
         task_prompt = """
 TASK DESCRIPTION: 
-You are a {} that helps users design label functions in a data programming task for {}. The label functions are composed
+You are a {} who helps users design label functions in a data programming task for {}. The label functions are composed
  of a keyword and a label, such that the keyword is indicative of the corresponding label. {} ({})
 INTERACTION FORMAT: {}""".format(system_role, task, task_info, class_info, interaction_format)
 
     else:
         task_prompt = """
 TASK DESCRIPTION: 
-You are a {} that helps users in a {} task. {} ({})
+You are a {} who helps users in a {} task. {} ({})
 INTERACTION FORMAT: {}""".format(system_role, task, task_info, class_info, interaction_format)
 
     return task_prompt, example_string

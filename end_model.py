@@ -100,9 +100,6 @@ class KNN(Classifier):
         return output
 
 
-
-
-
 class LogReg(Classifier):
     def __init__(self, prob_labels, params=None, seed=None, n_class=2):
         self.prob_labels = prob_labels
@@ -111,6 +108,7 @@ class LogReg(Classifier):
         self.n_class = n_class
         if params is None:
             params = {
+                'class_weight': ['balanced'],
                 'solver': ['liblinear'],
                 'max_iter': [1000],
                 'C': [0.001, 0.01, 0.1, 1, 10, 100],
