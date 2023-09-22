@@ -1,5 +1,5 @@
 import argparse
-from data_utils import load_wrench_data, relation_extraction_datasets
+from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
 from lf_family import create_label_matrix
@@ -13,7 +13,10 @@ import pprint
 
 
 def main(args):
-    train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor)
+    train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor,
+                                                                  stopwords=args.stop_words,
+                                                                  stemming=args.stemming,
+                                                                  max_ngram=args.max_ngram)
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
     print_dataset_stats(train_dataset, split="train")
     print_dataset_stats(valid_dataset, split="valid")
@@ -43,21 +46,29 @@ def main(args):
                               sampler_type=args.sampler,
                               seed=seed
                               )
+
         lf_agent = get_lf_agent(train_dataset=train_dataset,
                                 valid_dataset=valid_dataset,
                                 agent_type=args.lf_agent,
-                                lf_type=args.lf_type,
-                                filter_methods=args.lf_filter,
-                                acc_threshold=args.lf_acc_threshold,
-                                model=args.lf_llm_model,
-                                seed=seed,
                                 dataset_name=args.dataset_name,
-                                # following configs are for GPT/llama models
+                                # LLM prompt arguments
+                                model=args.lf_llm_model,
                                 example_per_class=args.example_per_class,
                                 example_selection=args.example_selection,
                                 return_explanation=args.return_explanation,
-                                play_expert_role=args.play_expert_role,
                                 dp_aware=args.dp_aware,
+                                temperature=args.temperature,
+                                top_p=args.top_p,
+                                n_completion=args.n_completion,
+                                # LF creation arguments
+                                lf_type=args.lf_type,
+                                filter_methods=args.lf_filter,
+                                acc_threshold=args.lf_acc_threshold,
+                                seed=seed,
+                                stop_words=args.stop_words,
+                                stemming=args.stemming,
+                                max_ngram=args.max_ngram,
+                                max_lf_per_iter=args.max_lf_per_iter,
                                 )
         al_model = None
         label_model = None
@@ -68,40 +79,51 @@ def main(args):
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
             if args.display:
-                if args.dataset_name in relation_extraction_datasets:
+                if args.dataset_name == "cdr":
                     text = train_dataset.examples[query_idx]["text"]
                     entity1 = train_dataset.examples[query_idx]["entity1"]
                     entity2 = train_dataset.examples[query_idx]["entity2"]
-                    print("Query [{}]: {} <{}> <{}>".format(query_idx, text, entity1, entity2))
+                    print("\nQuery [{}]: {}. Does {} cause {}?".format(query_idx, text, entity1, entity2))
+                elif args.dataset_name == "chemprot":
+                    text = train_dataset.examples[query_idx]["text"]
+                    entity1 = train_dataset.examples[query_idx]["entity1"]
+                    entity2 = train_dataset.examples[query_idx]["entity2"]
+                    print("\nQuery [{}]: {}. What is the relationship between {} and {}?".format(query_idx,
+                                                                                                 text, entity1, entity2))
                 else:
-                    print("Query [{}]: {}".format(query_idx,train_dataset.examples[query_idx]["text"]))
-            lf = lf_agent.create_lf(query_idx)
+                    print("\nQuery [{}]: {}".format(query_idx,train_dataset.examples[query_idx]["text"]))
+            cur_lfs = lf_agent.create_lf(query_idx)
             if args.display:
-                print("LF: ", lf.info())
+                for lf in cur_lfs:
+                    print("LF: ", lf.info())
                 print("Ground truth: ", train_dataset.labels[query_idx])
 
-            if lf.keyword != "NA":
-                gt_labels.append(train_dataset.labels[query_idx])
-                response_labels.append(lf.label)
-                lfs.append(lf)
+            gt_labels.append(train_dataset.labels[query_idx])
+            if cur_lfs[0].label in range(train_dataset.n_class):
+                response_labels.append(cur_lfs[0].label)
+            else:
+                response_labels.append(-1)
+
+            retrain_label_model = False
+            for lf in cur_lfs:
+                if lf.keyword != "NA":
+                    lfs.append(lf)
+                    retrain_label_model = True
+
+            if retrain_label_model:
                 lf_labels = [lf.label for lf in lfs]
                 L_train = create_label_matrix(train_dataset, lfs)
                 L_val = create_label_matrix(valid_dataset, lfs)
                 if np.min(lf_labels) != np.max(lf_labels):
                     if len(lfs) > 3:
-                        label_model = get_label_model(args.label_model, train_dataset.n_class)
+                        label_model = get_label_model(args.label_model, train_dataset.n_class, calibration=args.lm_calib)
                     else:
                         label_model = get_label_model("mv", train_dataset.n_class)
 
                     if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels), tune_label_model=args.tune_label_model)
-
-            else:
-                gt_labels.append(train_dataset.labels[query_idx])
-                if lf.label is not None:
-                    response_labels.append(lf.label)
-                else:
-                    response_labels.append(-1)
+                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                        tune_label_model=args.tune_label_model,
+                                        scoring=args.tune_metric)
 
             if t % args.train_iter == args.train_iter - 1:
                 if label_model is not None:
@@ -186,7 +208,7 @@ def main(args):
                         pprint.pprint(valid_stats)
                         print("Test prediction stats (end model output):")
                         pprint.pprint(test_stats)
-                else:
+                elif len(lfs) > 0:
                     # evaluate LF quality
                     gt_train_labels = np.array(train_dataset.labels)
                     lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels),
@@ -216,6 +238,25 @@ def main(args):
                         print("Valid LF stats:")
                         pprint.pprint(lf_val_stats)
                         print("No enough LFs. Skip training label model and end model.")
+                else:
+                    response_acc = accuracy_score(gt_labels, response_labels)
+                    cur_result = {
+                        "num_query": t + 1,
+                        "lf_num": 0,
+                        "lf_acc_avg": np.nan,
+                        "lf_cov_avg": np.nan,
+                        "response_acc": response_acc,
+                        "train_precision": np.nan,
+                        "train_coverage": np.nan,
+                        "test_acc": np.nan,
+                        "test_f1": np.nan,
+                        "test_auc": np.nan
+                    }
+                    if args.save_wandb:
+                        wandb.log(cur_result)
+                    if args.display:
+                        print(f"After {t+1} iterations:")
+                        print("No enough LFs. Skip training label model and end model.")
 
         if args.save_wandb:
             wandb.finish()
@@ -228,28 +269,35 @@ if __name__ == '__main__':
     parser.add_argument("--dataset-path", type=str, default="./data/wrench_data", help="dataset path")
     parser.add_argument("--dataset-name", type=str, default="youtube", help="dataset name")
     parser.add_argument("--feature-extractor", type=str, default="tfidf", help="feature for training end model")
+    parser.add_argument("--stop-words", type=str, default=None)
+    parser.add_argument("--stemming", type=str, default="porter")
     # sampler
     parser.add_argument("--sampler", type=str, default="passive", help="sample selector")
     # data programming
     parser.add_argument("--label-model", type=str, default="snorkel", help="label model used in DP paradigm")
+    parser.add_argument("--lm-calib", type=str, default="isotonic", help="calibration method for label model")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
     parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])
     parser.add_argument("--tune-label-model", type=bool, default=True, help="tune label model hyperparameters")
     parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
-    parser.add_argument("--tune-metric", type=str, default="acc")
+    parser.add_argument("--tune-metric", type=str, default="acc", help="evaluation metric used to tune model hyperparameters")
     # label function
     parser.add_argument("--lf-agent", type=str, default="simulated", help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", help="LF family")
     parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for simulated agent")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.5, help="LF accuracy threshold for simulated agent")
+    parser.add_argument("--max-lf-per-iter", type=int, default=1, help="Maximum LF num per interaction")
+    parser.add_argument("--max-ngram", type=int, default=1, help="N-gram in keyword LF")
     # prompting method
     parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo")
     parser.add_argument("--example-per-class", type=int, default=1)
     parser.add_argument("--return-explanation", action="store_true")
-    parser.add_argument("--play-expert-role", action="store_true")
     parser.add_argument("--dp-aware", action="store_true")
     parser.add_argument("--example-selection", type=str, default="random")
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--top-p", type=float, default=1)
+    parser.add_argument("--n-completion", type=int, default=1)
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")
@@ -258,7 +306,6 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--save-wandb", action="store_true")
-    parser.add_argument("--tag", type=str, default="0")
     args = parser.parse_args()
     main(args)
 

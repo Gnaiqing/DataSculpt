@@ -1,6 +1,8 @@
 import numpy as np
 import nltk
 from sklearn.metrics import accuracy_score
+
+
 class KeywordLF:
     def __init__(self, keyword, label):
         self.keyword = keyword
