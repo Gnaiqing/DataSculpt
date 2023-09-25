@@ -43,6 +43,8 @@ class Snorkel:
             self.seed = np.random.randint(1e6)
         else:
             self.seed = seed
+
+        self.calib_model_is_trained = False
         if self.calibration == "sigmoid":
             self.calib_model = LogisticRegression()
             self.threshold = 0.5
@@ -105,22 +107,33 @@ class Snorkel:
             self.best_params = {}
         self.model = LabelModel(cardinality=self.cardinality, verbose=False)
         self.model.fit(L_train=L_tr, Y_dev=ys_val, **self.best_params, seed=self.seed, progress_bar=False)
-        if self.calibration is not None:
+        self.calib_model_is_trained = False
+        if self.calibration is not None and len(ys_val_filtered) > 0:
             # currently, only support calibration for binary classification
             X_val_filtered = self.model.predict_proba(L_val_filtered)[:,1]  # uncalibrated probability
             self.calib_model.fit(X_val_filtered, ys_val_filtered)  # calibrate probability prediction
+            self.calib_model_is_trained = True
+            # X_tr_filtered = self.model.predict_proba(L_tr_filtered)[:,1]
+            # if self.calibration == "sigmoid":
+            #     p_tr_filtered = self.calib_model.predict_proba(X_tr_filtered)[:, 1]
+            # elif self.calibration == "isotonic":
+            #     p_tr_filtered = self.calib_model.predict(X_tr_filtered)
+            # neg_frac = np.mean(ys_val == 0)
+            # p_tr_filtered = np.sort(p_tr_filtered)
+            # self.threshold = np.quantile(p_tr_filtered, neg_frac)
+
             # use validation set to select decision threshold
-            X_val_filtered = self.model.predict_proba(L_val_filtered)[:, 1]
             if self.calibration == "sigmoid":
-                p_val_filtered = self.calib_model.predict_proba(X_val_filtered)[:,1]
+                p_val_filtered = self.calib_model.predict_proba(X_val_filtered)[:, 1]
             elif self.calibration == "isotonic":
                 p_val_filtered = self.calib_model.predict(X_val_filtered)
-
             candidate_thres = np.unique(p_val_filtered)
             best_score = 0.0
             if len(ys_val_filtered) > 0:
                 for theta in candidate_thres:
                     y_pred = p_val_filtered >= theta
+                    if np.min(y_pred) == np.max(y_pred):
+                        continue
                     if scoring == "f1":
                         score = f1_score(ys_val_filtered, y_pred)
                     else:
@@ -132,19 +145,20 @@ class Snorkel:
 
     def predict_proba(self, L):
         proba = self.model.predict_proba(L)
-        if self.calibration == "sigmoid":
-            proba = self.calib_model.predict_proba(proba[:,1])
-        elif self.calibration == "isotonic":
-            p = self.calib_model.predict(proba[:,1])
-            proba[:,1] = p
-            proba[:,0] = 1-p
+        if self.calib_model_is_trained:
+            if self.calibration == "sigmoid":
+                proba = self.calib_model.predict_proba(proba[:,1])
+            elif self.calibration == "isotonic":
+                p = self.calib_model.predict(proba[:,1])
+                proba[:,1] = p
+                proba[:,0] = 1-p
 
         return proba
 
     def predict(self, L):
         proba = self.predict_proba(L)
         if self.calibration is not None:
-            pred = (proba[:,1] >= self.threshold).astype(int)
+            pred = (proba[:,1] > self.threshold).astype(int)
             return pred
         else:
             return np.argmax(proba, axis=1)

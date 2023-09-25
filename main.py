@@ -2,7 +2,7 @@ import argparse
 from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
-from lf_family import create_label_matrix
+from lf_family import create_label_matrix, KeywordLF, RegexLF
 from label_model import get_label_model, Snorkel
 from end_model import train_disc_model
 from utils import print_dataset_stats, evaluate_lfs, evaluate_labels, evaluate_disc_model
@@ -13,10 +13,17 @@ import pprint
 
 
 def main(args):
+    if args.lf_type == "keyword":
+        use_revert_index = True
+    else:
+        use_revert_index = False
     train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor,
                                                                   stopwords=args.stop_words,
                                                                   stemming=args.stemming,
-                                                                  max_ngram=args.max_ngram)
+                                                                  max_ngram=args.max_ngram,
+                                                                  revert_index=use_revert_index,
+                                                                  append_cdr=args.append_cdr)
+
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
     print_dataset_stats(train_dataset, split="train")
     print_dataset_stats(valid_dataset, split="valid")
@@ -72,9 +79,13 @@ def main(args):
                                 )
         al_model = None
         label_model = None
+        retrain_label_model = False
         lfs = []
         gt_labels = []
         response_labels = []
+        if args.default_class is not None:
+            default_lf = RegexLF(".", args.default_class)
+            lfs.append(default_lf)
 
         for t in range(args.num_query):
             query_idx = sampler.sample(al_model=al_model)[0]
@@ -104,28 +115,31 @@ def main(args):
             else:
                 response_labels.append(-1)
 
-            retrain_label_model = False
+
             for lf in cur_lfs:
-                if lf.keyword != "NA":
+                if not lf.isempty():
                     lfs.append(lf)
                     retrain_label_model = True
 
-            if retrain_label_model:
-                lf_labels = [lf.label for lf in lfs]
-                L_train = create_label_matrix(train_dataset, lfs)
-                L_val = create_label_matrix(valid_dataset, lfs)
-                if np.min(lf_labels) != np.max(lf_labels):
-                    if len(lfs) > 3:
-                        label_model = get_label_model(args.label_model, train_dataset.n_class, calibration=args.lm_calib)
-                    else:
-                        label_model = get_label_model("mv", train_dataset.n_class)
-
-                    if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
-                                        tune_label_model=args.tune_label_model,
-                                        scoring=args.tune_metric)
-
             if t % args.train_iter == args.train_iter - 1:
+                if retrain_label_model:
+                    retrain_label_model = False
+                    lf_labels = [lf.label for lf in lfs]
+                    L_train = create_label_matrix(train_dataset, lfs)
+                    L_val = create_label_matrix(valid_dataset, lfs)
+
+                    if np.min(lf_labels) != np.max(lf_labels):
+                        if len(lfs) > 3:
+                            label_model = get_label_model(args.label_model, train_dataset.n_class,
+                                                          calibration=args.lm_calib)
+                        else:
+                            label_model = get_label_model("mv", train_dataset.n_class)
+
+                        if isinstance(label_model, Snorkel):
+                            label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                            tune_label_model=args.tune_label_model,
+                                            scoring=args.tune_metric)
+
                 if label_model is not None:
                     # evaluate LF quality
                     gt_train_labels = np.array(train_dataset.labels)
@@ -271,6 +285,7 @@ if __name__ == '__main__':
     parser.add_argument("--feature-extractor", type=str, default="tfidf", help="feature for training end model")
     parser.add_argument("--stop-words", type=str, default=None)
     parser.add_argument("--stemming", type=str, default="porter")
+    parser.add_argument("--append-cdr", action="store_true", help="append cdr snippets to original dataset")
     # sampler
     parser.add_argument("--sampler", type=str, default="passive", help="sample selector")
     # data programming
@@ -279,6 +294,7 @@ if __name__ == '__main__':
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
     parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])
+    parser.add_argument("--default-class", type=int, default=None)
     parser.add_argument("--tune-label-model", type=bool, default=True, help="tune label model hyperparameters")
     parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
     parser.add_argument("--tune-metric", type=str, default="acc", help="evaluation metric used to tune model hyperparameters")

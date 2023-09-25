@@ -14,59 +14,105 @@ def create_prompt(dataset_name, dataset, example_per_class=1, example_selection=
         class_info = "0 for negative, 1 for positive"
     elif dataset_name in ["chemprot"]:
         task = "biomedical relation extraction"
-        class_info = "0 for chemical B is part of chemical A, 1 for chemical B is the regulator of chemical A. " \
-                     "2 for chemical B is the upregulator of chemical A. 3 for chemical B is the downregulator of chemical A." \
-                     "4 for chemical B is the agnoist of chemical A. 5 for chemical B is the antagonist of chemical A." \
-                     "6 for chemical B is the antagonist of chemical A. 7 for chemical B is the modulator of chemical A." \
-                     "8 for chemical B is the substrate or product of chemical A. 9 for none of the above."
+        class_info = "0 for chemical B (or A) is part of chemical A (or B), 1 for chemical B (or A) is the regulator of chemical A (or B). " \
+                     "2 for chemical B (or A) is the upregulator of chemical A (or B). 3 for chemical B (or A) is the downregulator of chemical A (or B)." \
+                     "4 for chemical B (or A) is the agnoist of chemical A (or B). 5 for chemical B (or A) is the antagonist of chemical A (or B)." \
+                     "6 for chemical B (or A) is the modulator of chemical A (or B). 7 for chemical B (or A) is the cofactor of chemical A (or B)." \
+                     "8 for chemical B (or A) is the substrate or product of chemical A (or B). 9 for the relationship between chemical A and chemical B is not listed above."
     elif dataset_name in ["cdr"]:
         task = "chemical disease relation extraction"
         class_info = "0 for the chemical does not cause the disease, 1 for the chemical causes the disease"
     else:
-        raise ValueError("dataset task not identified.")
+        raise NotImplementedError("dataset task not identified.")
 
     if dataset_name == "youtube":
         task_info = "In each iteration, the user will provide a comment for a video. Please decide whether the comment is a spam."
     elif dataset_name == "sms":
-        task_info = "In each iteration, the user will provide a text message. Please decide whether the message is a spam."
+        task_info = "In each iteration, the user will provide a text message. Please decide whether the message is a spam. Hint: promotional " \
+                    "messages should also be considered as spam messages."
     elif dataset_name == "imdb":
         task_info = "In each iteration, the user will provide a movie review. Please decide whether the review is positive or negative."
     elif dataset_name == "yelp":
         task_info = "In each iteration, the user will provide a product review. Please decide whether the review is positive or negative."
     elif dataset_name == "chemprot":
-        task_info = "In each iteration, the user will provide a biomedical statement, followed by two chemicals occured in that statement." \
+        task_info = "In each iteration, the user will provide a biomedical statement, followed by a question asking the relationship between two chemicals occured in that statement." \
                     "Please decide the relationship between the two chemicals based on the statement."
     elif dataset_name == "cdr":
         task_info = "In each iteration, the user will provide a biomedical passage, followed by a question asking whether a chemical causes " \
-                    "a disease. Please decide whether the chemical causes the disease based on the passage."
+                    "a disease. Please decide whether the chemical causes the disease based on the passage. Hint: please be rigorous when making" \
+                    "the causal claim, that is, only return 1 if the passage explictly states that the chemical causes the disease, and return 0" \
+                    "when it only indicate a possibility of causal relationship."
 
-    if "expert_role" in kwargs and kwargs["expert_role"]:
-        system_role = f"{task} expert"
+    if "lf_type" in kwargs:
+        lf_type = kwargs["lf_type"]
     else:
-        system_role = "helpful assistant"
+        lf_type = "keyword"
 
-    if "explanation" in kwargs and kwargs["explanation"]:
-        interaction_format = """
-After the user provides input, explain your reason process step by step. Then identify a list of keywords that helps
-making prediction. Finally, provide the class label for the input. The interaction format is as follows. Replace the 
-text in brackets when you respond to user query.
-User: 
-[Input text]
-Response:
-EXPLANATION: <Explain the reason process step by step>
-KEYWORDS: <List of keywords>
-LABEL: <Predicted label>
-"""
+    if "explanation" in kwargs:
+        explanation = kwargs["explanation"]
     else:
-        interaction_format = """
-After the user provides input, identify a list of keywords that helps making prediction. Then provide the class label 
-for the input. The interaction format is as follows. Replace the text in brackets when you respond to user query.
-User: 
-[Input text]
-Response:
-KEYWORDS: <List of keywords>
-LABEL: <Predicted label>
-"""
+        explanation = False
+
+    if lf_type == "keyword":
+        if explanation:
+            interaction_format = """
+        After the user provides input, explain your reason process step by step. Then identify a list of keywords that helps
+        making prediction. Finally, provide the class label for the input. The interaction format is as follows. Replace the 
+        text in brackets when you respond to user query.
+        User: 
+        [Input text]
+        Response:
+        EXPLANATION: <Explain the reason process step by step>
+        KEYWORDS: <List of keywords>
+        LABEL: <Predicted label>
+        """
+        else:
+            interaction_format = """
+        After the user provides input, identify a list of keywords that helps making prediction. Then provide the class label 
+        for the input. The interaction format is as follows. Replace the text in brackets when you respond to user query.
+        User: 
+        [Input text]
+        Response:
+        KEYWORDS: <List of keywords>
+        LABEL: <Predicted label>
+        """
+    elif lf_type == "regex":
+        if dataset_name == "cdr":
+            regex_instruction = "In the regular expression, use {{A}} to represent the chemical and {{B}} to represent the disease that" \
+                                " occur in the user's query. Use [SEP] to seperate multiple regular expressions."
+        elif dataset_name == "chemprot":
+            regex_instruction = "In the regular expression, use {{A}} to represent the first chemical and {{B}} to represent the second " \
+                                "chemical that occur in the user's query. Use [SEP] to seperate multiple regular expressions."
+        else:
+            regex_instruction = ""
+
+        if explanation:
+            interaction_format = """
+        After the user provides input, explain your reason process step by step. Then provide a regular expression such that
+        if a passage matches the regex, it is likely to have the same label with the current input.{} If no regular expression
+        can be identified, return NONE for regular expression. Finally, provide the class label for the input. The interaction 
+        format is as follows. Replace the text in brackets when you respond to user query.
+        User: 
+        [Input text]
+        Response:
+        EXPLANATION: <Explain the reason process step by step>
+        REGEX: <List of regular expressions>
+        LABEL: <Predicted label>
+        """.format(regex_instruction)
+        else:
+            interaction_format = """
+        After the user provides input, provide a regular expression such that if a passage matches the regex, it is likely to 
+        have the same label with the current input. {} If no regular expression can be identified, return NONE for regular expression. 
+        Finally, provide the class label for the input. The interaction format is as follows. Replace the text in brackets when 
+        you respond to user query.
+        User: 
+        [Input text]
+        Response:
+        REGEX: <List of regular expressions>
+        LABEL: <Predicted label>
+        """.format(regex_instruction)
+    else:
+        raise NotImplementedError(f"LF type {lf_type} not supported.")
 
     if example_per_class > 0:
         example_string = ""
@@ -87,22 +133,34 @@ LABEL: <Predicted label>
                 selected_indices = np.random.choice(active_indices, example_per_class)
                 example_indices += selected_indices.tolist()
             else:
-                raise ValueError("Example selection method not supported.")
+                raise NotImplementedError("Example selection method not supported.")
 
         for idx in example_indices:
             user_input = examples[idx]["data"]
             label = examples[idx]["label"]
-            keywords = examples[idx]["keywords"]
-            explanation = examples[idx]["explanation"]
-            if "explanation" in kwargs and kwargs["explanation"]:
-                example = "User:{}\nResponse:\nExplanation: {}\nKEYWORDS: {}\nLABEL: {}\n".format(
-                    user_input, explanation, keywords, label)
-            else:
-                example = "User:{}\nResponse:\nKEYWORDS: {}\nLABEL: {}\n".format(user_input, keywords, label)
+
+            if lf_type == "keyword":
+                keywords = examples[idx]["keywords"]
+                if explanation:
+                    explanation = examples[idx]["explanation"]
+                    example = "User:{}\nResponse:\nExplanation: {}\nKEYWORDS: {}\nLABEL: {}\n".format(
+                        user_input, explanation, keywords, label)
+                else:
+                    example = "User:{}\nResponse:\nKEYWORDS: {}\nLABEL: {}\n".format(user_input, keywords, label)
+            elif lf_type == "regex":
+                regex = examples[idx]["regex"]
+                if explanation:
+                    explanation = examples[idx]["explanation"]
+                    example = "User:{}\nResponse:\nExplanation: {}\nREGEX: {}\nLABEL: {}\n".format(
+                        user_input, explanation, regex, label)
+                else:
+                    example = "User:{}\nResponse:\nREGEX: {}\nLABEL: {}\n".format(user_input, regex, label)
+
             example_string += example
     else:
         example_string = ""
 
+    system_role = "helpful assistant"
     if "dp_aware" in kwargs and kwargs["dp_aware"]:
         task_prompt = """
 TASK DESCRIPTION: 

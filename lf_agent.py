@@ -2,10 +2,10 @@ import sklearn
 import numpy as np
 import os
 from numpy.random import default_rng
-from lf_family import KeywordLF
+from lf_family import KeywordLF, RegexLF
 import openai
 from gpt_utils import create_prompt
-from data_utils import relation_extraction_datasets, preprocess_text
+from data_utils import preprocess_text
 import nltk
 import re
 
@@ -64,6 +64,7 @@ def extract_label_keywords(content, cardinality=2):
     """
     Extract label and keywords from contents returned by LLMs
     :param content: returned contents
+    :param cardinality: the cardinality of the dataset. Used to check label validity.
     :return: label, keyword_list
     """
     label_match = re.search("LABEL:\s*\d+", content)
@@ -84,6 +85,37 @@ def extract_label_keywords(content, cardinality=2):
         keyword_list = []
 
     return label, keyword_list
+
+
+def extract_label_regex(content, cardinality=2):
+    """
+    Extract label and regular expression from contents returned by LLMs
+    :param content: returned contents
+    :param cardinality: the cardinality of the dataset. Used to check label validity.
+    :return: label, keyword_list
+    """
+    label_match = re.search("LABEL:\s*\d+", content)
+    if label_match:
+        st, ed = label_match.span()
+        label = int(label_match.string[st+6:ed])
+        if label not in range(cardinality):
+            label = None
+    else:
+        label = None
+
+    regex_match = re.search("REGEX:.*\n", content)
+    if regex_match:
+        st, ed = regex_match.span()
+        regex_list = []
+        for x in regex_match.string[st+6:ed].split('[SEP]'):
+            regex = x.strip(" '\"\n")
+            if regex.lower() != "none":
+                regex_list.append(regex)
+
+    else:
+        regex_list = []
+
+    return label, regex_list
 
 
 class ChatGPTLFAgent:
@@ -127,7 +159,8 @@ class ChatGPTLFAgent:
                                                                 example_selection=self.example_selection,
                                                                 explanation=self.return_explanation,
                                                                 expert_role=self.play_expert_role,
-                                                                dp_aware=self.dp_aware)
+                                                                dp_aware=self.dp_aware,
+                                                                lf_type=self.lf_type)
         if self.display:
             print("ChatGPT system prompt:")
             print(self.system_prompt)
@@ -192,8 +225,51 @@ class ChatGPTLFAgent:
                         lf = KeywordLF(keyword=processed_keyword, label=label)
                         candidate_lfs.append(lf)
 
+        elif self.lf_type == "regex":
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            label, regex_list = None, []
+            for i in range(self.repeats):  # try multiple times if first attempt fails
+                try:
+                    response = openai.ChatCompletion.create(
+                        model=self.model,
+                        messages=messages,
+                        top_p=self.top_p,
+                        temperature=self.temperature,
+                        n=self.n_completion
+                    )
+                except openai.error.OpenAIError:
+                    continue
+
+                output_labels = []
+                for j in range(self.n_completion):
+                    response_content = response['choices'][j]["message"]["content"]
+                    if self.display:
+                        print("Response {}: {}\n".format(j, response_content))
+                    label, regexs = extract_label_regex(response_content, self.train_dataset.n_class)
+                    if label in range(self.train_dataset.n_class):
+                        output_labels.append(label)
+                    regex_list += regexs
+
+                if len(output_labels) > 0:
+                    label = np.bincount(output_labels).argmax()
+                    break
+
+            regex_list = np.unique(regex_list)
+            if label is not None:
+                for regex in regex_list:
+                    try:
+                        # check if regex is a valid regular expression
+                        re.compile(regex)
+                    except re.error:
+                        continue
+                    lf = RegexLF(regex=regex, label=label)
+                    candidate_lfs.append(lf)
+
         else:
-            raise ValueError("LF Type not supported.")
+            raise NotImplementedError("LF Type not supported.")
 
         filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset,
                                             self.valid_dataset, self.acc_threshold, self.lfs)
@@ -202,7 +278,7 @@ class ChatGPTLFAgent:
             filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
 
         if len(filtered_lfs) == 0:
-            filtered_lfs = [KeywordLF("NA", label)]
+            filtered_lfs = [KeywordLF("none", label)]
         else:
             for lf in filtered_lfs:
                 self.lfs.append(lf)
@@ -211,7 +287,7 @@ class ChatGPTLFAgent:
 
 
 class SimLFAgent:
-    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc","unique"),
+    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc", "unique"),
                  acc_threshold=0.6, seed=0, **kwargs):
         """
         Simulated LF Agent that return a LF with accuracy above threshold
@@ -247,7 +323,7 @@ class SimLFAgent:
                 lf = KeywordLF(keyword=token, label=label)
                 candidate_lfs.append(lf)
         else:
-            raise ValueError ("LF Type not supported.")
+            raise ValueError("LF Type not supported.")
 
         filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset, self.valid_dataset,
                                             self.acc_threshold, self.lfs)
