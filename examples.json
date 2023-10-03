@@ -460,5 +460,116 @@
       "regex": "None",
       "explanation": "Most patients with KIR6.2 mutations were resistant to diazoxide. The relationship between KIR6.2 and diazoxide is not listed in other classes."
     }
+  ],
+  "agnews": [
+    {
+      "idx": 96057,
+      "data": "George W. Bush, Vladimir Putin, and leaders from other 19 Asian - Pacific nations including China #39;s Hu Jintao and Japan #39;s Junichiro Koizumi are beggining to arrive in Santiago to attend to Chile #39;s APEC summit on Saturday.",
+      "label": 0,
+      "keywords": "George W. Bush, Vladimir Putin, leaders, Asian - Pacific nations, China, Hu Jintao, Japan,  Junichiro Koizumi, APEC",
+      "explanation": "This sentence says leaders from various countries came to Santiago to attend APEC summit, therefore it is related to world news."
+    },
+    {
+      "idx": 96077,
+      "data": "AP - Syracuse coach Jim Boeheim is known for his cutting wit, and even his star players can wind up on the receiving end. Preseason All-America Hakim Warrick scored 17 of his 21 points in the second half to lead the fifth-ranked Orange to a 71-58 victory over No. 12 Mississippi State on Thursday night in the semifinals of the Coaches vs. Cancer Classic.",
+      "label": 1,
+      "keywords": "coach, star players, Preseason, scored, semifinals",
+      "explanation": "This sentence discusses a game between two university teams, therefore it is related to sports."
+    },
+    {
+      "idx":96138,
+      "data": "Nike co-founder Phil Knight has announced that he will step down as chief executive and president of the company. The 66-year-old notified the company #39;s board of directors at ",
+      "label": 2,
+      "keywords": "co-founder, chief executive, company, board of directors",
+      "explanation": "This sentence is about Nike company's personnel changes, therefore it is related to business."
+    },
+    {
+      "idx": 96222,
+      "data": "LONDON (Reuters) - Microsoft Corp., the world's largest  software maker, has expanded its flagship MSN Hotmail internet  email service to include European and Japanese domain names, it  said on Friday.",
+      "label": 3,
+      "keywords": "Microsoft, software, email service",
+      "explanation": "This sentence discusses the service extension of Microsoft Crop., which is a high tech company. Therefore, the message is related to science or high-tech."
+    }
+  ],
+  "trec": [
+    {
+      "idx": 11,
+      "data": "what is an angelus?",
+      "label": 0,
+      "keywords": "what is an",
+      "explanation": "This question asks the definition of an angelus, thus it belongs to questions asking for description."
+    },
+    {
+      "idx": 24,
+      "data":"what 's the largest u.s. agricultural crop by weight ?",
+      "label": 1,
+      "keywords": "what 's the",
+      "explanation": "This question asks the largest u.s. agricultural crop by weight, the anwser should be a type of crop, thus it is asking for an entity."
+    },
+    {
+      "idx": 71,
+      "data": "who was william henry harrison ?",
+      "label": 2,
+      "keywords": "who",
+      "explanation": "The question asks for a specific person, thus it is a question for human descriptions."
+    },
+    {
+      "idx": 327,
+      "data": "what does bud stand for ?",
+      "label": 3,
+      "keywords": "stand for",
+      "explanation": "The question asks for the meaning of an abbreviation 'bud', thus it is a question asking for abbreviation."
+    },
+    {
+      "idx": 32,
+      "data": "where is the keck telescope ?",
+      "label": 4,
+      "keywords": "where is",
+      "explanation": "The question asks for the location of the keck telescope, therefore the answer should be a location."
+    },
+    {
+      "idx": 131,
+      "data": "how many sonnets did shakespeare write ?",
+      "label": 5,
+      "keywords": "how many",
+      "explanation": "This question asks for the quantity of shakespeare's sonnets, therefore the answer should be a numeric value."
+    }
+  ],
+  "medical_abstract": [
+    {
+      "idx": 7,
+      "data": "Elective radical neck dissection in epidermoid cancer of the head and neck. A retrospective analysis of 853 cases of mouth, pharynx, and larynx cancer. A retrospective analysis of 853 patients with cancer of the mouth, pharynx, and larynx operated on over a 30-year period was performed. Four hundred fifty-seven of them had a radical neck dissection (RND) at some point. Five hundred ninety patients had no clinically positive nodes (N-o) necks at the time of primary treatment; 99 of these had elective neck dissection, whereas 95 others had a delayed RND when nodes became clinically involved. Twenty-three percent of all N-o patients had microscopically involved nodes and less than half of these were among those patients selected for elective RND. Furthermore, 58% of those patients who had elective RND did not have positive nodes. Comparative analysis of elective RND, delayed therapeutic RND after clinical appearance of nodes, and composite operations for patients with N1-N3 disease indicates little difference in disease-free survival when the nodes in the elective RND were positive microscopically for tumors (56%, 49% and 47% respectively). It thus seems that elective RND offers no real advantage over a careful watchful waiting approach in most patients",
+      "label": 0,
+      "keywords": "cancer, tumors",
+      "explanation": "This study investigates treatments for patients with cancer, thus it is related to neoplasms."
+    },
+    {
+      "idx": 47,
+      "data": "Ten years' experience with an elemental diet in the management of Crohn's disease. The immediate and longterm outcome of treating patients with acute Crohn's disease with an elemental diet was studied retrospectively. Successful diet induced remission was achieved in 96 of 113 patients (85%) regardless of age, sex, site or severity of disease, or associated complications of strictures, fistula, or perianal disease. Treatment was unsuccessful in 17 patients (15%), but there were no features at the outset of treatment that distinguished these patients from those who had successful remission. The longterm outcome of treatment was assessed over a five year period by analysis of life tables and survival curves. Twenty two per cent of the patients relapsed within six months of treatment and thereafter the annual relapse rate was 8-10%. Patients with disease complicated by fistula or perianal involvement had early relapse, approaching 100% for the latter. A further retrospective comparison of longterm outcome of diet v steroid induced remissions showed no significant difference in the relapse rates between the two groups at one, three, and five years.",
+      "label": 1,
+      "keywords": "Crohn's disease, diet",
+      "explanation": "This study investigates the management of Crohn's disease with an elemental diet, so it is related to digestive system diseases."
+    },
+    {
+      "idx": 43,
+      "data": "Prognosticating study for cervical myelopathy using evoked spinal cord potentials. One hundred twenty-three cases of cervical spondylotic and ossification of the posterior longitudinal ligament (OPLL) myelopathy cases with long tract signs subjected to surgical treatment were studied to identify the most important factors having an influence on postoperative outcome using evoked spinal cord potentials (ESCP). Disappearance and positive wave changes of these potentials at the level of responsible lesions and slow conduction velocity under 40 m indicated an unsatisfactory outcome. Localized-lesion cases diagnosed by ESCPs had excellent results, significantly more so than extensive-lesion cases, regardless of operative methods. In 123 cases, 76% were found to have localized lesions, while the other 24% showed extensive lesions. Concerning the difference between CSM and OPLL, 54% of OPLL and only 14% of CSM demonstrated extensive lesions.",
+      "label": 2,
+      "keywords": "cervical myelopathy",
+      "explanation": "This study is about cervical myelopathy, thus it is related to nervous system diseases."
+    },
+    {
+      "idx": 11,
+      "data": "Coronary ostial reconstruction: technical issues. Coronary ostial reconstruction may be the preferred alternative to reestablish antegrade myocardial revascularization in patients with isolated ostial stenosis. The technical steps of reconstruction are described. The ultrasonic aspirator is a helpful implement in the dissection of the left main and the proximal right coronary arteries. Satisfactory results of coronary ostial reconstruction in the current era seem to fulfill its promise.",
+      "label": 3,
+      "keywords": "coronary ostial, myocardial, ostial stenosis",
+      "explanation": "The paragraph is about coronary ostial reconstruction as a solution to isolated ostial stenosis, thus it is related to cardiovascular diseases."
+    },
+    {
+      "idx": 34,
+      "data": "Acute and chronic stress in duodenal ulcer disease. Acute and chronic life event stressors were objectively assessed in a sample of duodenal ulcer patients and community controls. Stress was assessed on two dimensions, \"personal threat\" and \"goal frustration.\" Chronic stressors (those of 6 months' duration or more) involving high goal frustration were significantly and independently associated with the onset and relapse of duodenal ulcers, as were acute events of high immediate but transient personal threat.",
+      "label": 4,
+      "keywords": "duodenal ulcer disease",
+      "explanation": "This paragraph is about duodenal ulcer disease, which does not lie in other categories."
+    }
   ]
 }

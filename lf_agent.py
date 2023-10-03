@@ -278,7 +278,10 @@ class ChatGPTLFAgent:
             filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
 
         if len(filtered_lfs) == 0:
-            filtered_lfs = [KeywordLF("none", label)]
+            if self.lf_type == "keyword":
+                filtered_lfs = [KeywordLF("none", label)]
+            else:
+                filtered_lfs = [RegexLF("none", label)]
         else:
             for lf in filtered_lfs:
                 self.lfs.append(lf)

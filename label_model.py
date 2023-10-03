@@ -27,14 +27,18 @@ def get_label_model(method, cardinality=2, **kwargs):
 
 
 class Snorkel:
-    def __init__(self, seed=None, calibration="isotonic", **kwargs):
+    def __init__(self, seed=None, calibration="isotonic", threshold_selection="auto", **kwargs):
         self.search_space = kwargs['search_space']
         self.n_trials = kwargs.get('n_trials', 100)
         self.cardinality = kwargs['cardinality']
         self.calibration = calibration
-        if self.calibration is not None and self.cardinality > 2:
-            warnings.warn("Currently, calibration is only supported for binary classification.")
+        self.threshold_selection = threshold_selection
+        self.threshold = None
+
+        if (self.calibration is not None or self.threshold_selection == "auto") and self.cardinality > 2:
+            warnings.warn("Currently, calibration and threshold selection are only supported for binary classification.")
             self.calibration = None
+            self.threshold_selection = "fixed"
 
         self.best_params = None
         self.model = None
@@ -47,16 +51,13 @@ class Snorkel:
         self.calib_model_is_trained = False
         if self.calibration == "sigmoid":
             self.calib_model = LogisticRegression()
-            self.threshold = 0.5
         elif self.calibration == "isotonic":
             self.calib_model = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip")
-            self.threshold = 0.5
         else:
             self.calib_model = None
 
     def _to_onehot(self, ys):
         ys = np.array(ys)
-        ys[ys == -1] = 0
         ys_onehot = np.zeros((len(ys), self.cardinality))
         ys_onehot[range(len(ys_onehot)), ys] = 1
 
@@ -79,22 +80,26 @@ class Snorkel:
             if len(L_val_filtered) == 0:
                 return 0.0  # no data in validation set is covered
 
-            # logloss as validation loss
-            if scoring == 'logloss':
-                ys_pred_val = model.predict_proba(L_val_filtered)
-                ys_val_onehot = self._to_onehot(ys_val_filtered)
-                val_loss = -(ys_val_onehot * np.log(np.clip(ys_pred_val, 1e-6, 1.))).sum(axis=1).mean()
-            elif scoring == 'f1':
-                ys_pred = model.predict(L_val_filtered)
-                if self.cardinality > 2:
-                    val_loss = -f1_score(ys_val_filtered, ys_pred, average="macro")
-                else:
-                    val_loss = -f1_score(ys_val_filtered, ys_pred)
-            elif scoring == "acc":
-                ys_pred = model.predict(L_val_filtered)
-                val_loss = -accuracy_score(ys_val_filtered, ys_pred)
-            else:
-                raise ValueError("Scoring metric not supported.")
+            # select logloss as validation loss as the label model may reject making prediction
+            ys_pred_val = model.predict_proba(L_val_filtered)
+            ys_val_onehot = self._to_onehot(ys_val_filtered)
+            val_loss = -(ys_val_onehot * np.log(np.clip(ys_pred_val, 1e-6, 1.))).sum(axis=1).mean()
+
+            # if scoring == 'logloss':
+            #     ys_pred_val = model.predict_proba(L_val_filtered)
+            #     ys_val_onehot = self._to_onehot(ys_val_filtered)
+            #     val_loss = -(ys_val_onehot * np.log(np.clip(ys_pred_val, 1e-6, 1.))).sum(axis=1).mean()
+            # elif scoring == 'f1':
+            #     ys_pred = model.predict(L_val_filtered)
+            #     if self.cardinality > 2:
+            #         val_loss = -f1_score(ys_val_filtered, ys_pred, average="macro")
+            #     else:
+            #         val_loss = -f1_score(ys_val_filtered, ys_pred)
+            # elif scoring == "acc":
+            #     ys_pred = model.predict(L_val_filtered)
+            #     val_loss = -accuracy_score(ys_val_filtered, ys_pred)
+            # else:
+            #     raise ValueError("Scoring metric not supported.")
 
             return val_loss
 
@@ -105,33 +110,31 @@ class Snorkel:
             self.best_params = study.best_params
         else:
             self.best_params = {}
+
         self.model = LabelModel(cardinality=self.cardinality, verbose=False)
         self.model.fit(L_train=L_tr, Y_dev=ys_val, **self.best_params, seed=self.seed, progress_bar=False)
         self.calib_model_is_trained = False
+        X_val_filtered = self.model.predict_proba(L_val_filtered)[:, 1]  # uncalibrated probability
         if self.calibration is not None and len(ys_val_filtered) > 0:
             # currently, only support calibration for binary classification
-            X_val_filtered = self.model.predict_proba(L_val_filtered)[:,1]  # uncalibrated probability
             self.calib_model.fit(X_val_filtered, ys_val_filtered)  # calibrate probability prediction
             self.calib_model_is_trained = True
-            # X_tr_filtered = self.model.predict_proba(L_tr_filtered)[:,1]
-            # if self.calibration == "sigmoid":
-            #     p_tr_filtered = self.calib_model.predict_proba(X_tr_filtered)[:, 1]
-            # elif self.calibration == "isotonic":
-            #     p_tr_filtered = self.calib_model.predict(X_tr_filtered)
-            # neg_frac = np.mean(ys_val == 0)
-            # p_tr_filtered = np.sort(p_tr_filtered)
-            # self.threshold = np.quantile(p_tr_filtered, neg_frac)
 
+        if self.threshold_selection == "auto" and len(ys_val_filtered) > 0:
             # use validation set to select decision threshold
             if self.calibration == "sigmoid":
                 p_val_filtered = self.calib_model.predict_proba(X_val_filtered)[:, 1]
             elif self.calibration == "isotonic":
                 p_val_filtered = self.calib_model.predict(X_val_filtered)
+            else:
+                p_val_filtered = X_val_filtered
+
+            # select threshold
             candidate_thres = np.unique(p_val_filtered)
             best_score = 0.0
             if len(ys_val_filtered) > 0:
                 for theta in candidate_thres:
-                    y_pred = p_val_filtered >= theta
+                    y_pred = p_val_filtered > theta
                     if np.min(y_pred) == np.max(y_pred):
                         continue
                     if scoring == "f1":
@@ -157,7 +160,7 @@ class Snorkel:
 
     def predict(self, L):
         proba = self.predict_proba(L)
-        if self.calibration is not None:
+        if self.threshold is not None:
             pred = (proba[:,1] > self.threshold).astype(int)
             return pred
         else:

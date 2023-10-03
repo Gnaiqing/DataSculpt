@@ -110,6 +110,7 @@ def load_wrench_data(data_root, dataset_name, feature, stopwords=None, stemming=
     else:
         train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
                                                                   extract_feature=True, extract_fn=feature, cache_name=feature)
+
     if revert_index:
         train_dataset.revert_index = build_revert_index(train_dataset, stop_words=stopwords, stemming=stemming, max_ngram=max_ngram)
         valid_dataset.revert_index = build_revert_index(valid_dataset, stop_words=stopwords, stemming=stemming, max_ngram=max_ngram)

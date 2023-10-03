@@ -3,22 +3,16 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, precision_score, recall_score, confusion_matrix
 from sklearn.utils import shuffle
-from sklearn.semi_supervised import LabelSpreading, LabelPropagation, SelfTrainingClassifier
+from sklearn.semi_supervised import SelfTrainingClassifier
 import optuna
 import pdb
 
 
-def get_discriminator(model_type, prob_labels, params=None, seed=None, ssl_method=None, n_class=2):
+def get_discriminator(model_type, prob_labels, params=None, seed=None,  n_class=2):
     if model_type == 'logistic':
-        if ssl_method is None:
-            return LogReg(prob_labels, params, seed, n_class=n_class)
-        else:
-            return LogRegSSL(params, seed, n_class=n_class)
+        return LogReg(prob_labels, params, seed, n_class=n_class)
     elif model_type == "knn":
-        if ssl_method is None:
-            return KNN(prob_labels, n_class=n_class, metric="cosine")
-        else:
-            raise ValueError('discriminator model not supported.')
+        return KNN(prob_labels, n_class=n_class, metric="cosine")
     else:
         raise ValueError('discriminator model not supported.')
 
@@ -29,31 +23,22 @@ def to_onehot(ys, cardinality=2):
     return ys_onehot
 
 
-def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, xs_u, valid_dataset, soft_training,
-                     ssl_method, tune_end_model, tune_metric, seed):
+def train_disc_model(model_type, xs_tr, ys_tr_soft, ys_tr_hard, valid_dataset, soft_training,
+                     tune_end_model, tune_metric, seed):
     # prepare discriminator
-    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, ssl_method=ssl_method,
-                                   n_class=valid_dataset.n_class)
+    disc_model = get_discriminator(model_type=model_type, prob_labels=soft_training, seed=seed, n_class=valid_dataset.n_class)
 
     if soft_training:
         ys_tr = ys_tr_soft
     else:
         ys_tr = ys_tr_hard
 
-    if ssl_method is None:
-        sample_weights = None
-        if tune_end_model:
-            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights, scoring=tune_metric)
-        else:
-            disc_model.best_params = {}
-        disc_model.fit(xs_tr, ys_tr, sample_weights)
+    sample_weights = None
+    if tune_end_model:
+        disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, sample_weights, scoring=tune_metric)
     else:
-        if tune_end_model:
-            disc_model.tune_params(xs_tr, ys_tr, valid_dataset.features, valid_dataset.labels, xs_u, scoring=tune_metric)
-        else:
-            disc_model.best_params = {}
-        disc_model.fit(xs_tr, ys_tr, xs_u)
-
+        disc_model.best_params = {}
+    disc_model.fit(xs_tr, ys_tr, sample_weights)
     return disc_model
 
 

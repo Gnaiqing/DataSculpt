@@ -37,6 +37,9 @@ def main(args):
 
     rng = np.random.default_rng(args.seed)
     for run in range(args.runs):
+        if run < 2 and args.dataset_name == "cdr":
+            seed = rng.choice(10000)
+            continue
         if args.save_wandb:
             wandb.init(
                 project="LLMDP",
@@ -51,6 +54,12 @@ def main(args):
         seed = rng.choice(10000)
         sampler = get_sampler(train_dataset=train_dataset,
                               sampler_type=args.sampler,
+                              embedding_model=args.embedding_model,
+                              distance=args.distance,
+                              uncertain_metric=args.uncertain_metric,
+                              k=args.neighbor_num,
+                              alpha=args.alpha,
+                              beta=args.beta,
                               seed=seed
                               )
 
@@ -77,8 +86,9 @@ def main(args):
                                 max_ngram=args.max_ngram,
                                 max_lf_per_iter=args.max_lf_per_iter,
                                 )
-        al_model = None
         label_model = None
+        lm_probs = None # label model's output on train data
+        L_train = None
         retrain_label_model = False
         lfs = []
         gt_labels = []
@@ -88,7 +98,7 @@ def main(args):
             lfs.append(default_lf)
 
         for t in range(args.num_query):
-            query_idx = sampler.sample(al_model=al_model)[0]
+            query_idx = sampler.sample(lm_probs=lm_probs)[0]
             if args.display:
                 if args.dataset_name == "cdr":
                     text = train_dataset.examples[query_idx]["text"]
@@ -115,31 +125,33 @@ def main(args):
             else:
                 response_labels.append(-1)
 
-
             for lf in cur_lfs:
                 if not lf.isempty():
                     lfs.append(lf)
                     retrain_label_model = True
 
+            if retrain_label_model:
+                retrain_label_model = False
+                lf_labels = [lf.label for lf in lfs]
+                L_train = create_label_matrix(train_dataset, lfs)
+                L_val = create_label_matrix(valid_dataset, lfs)
+
+                if np.min(lf_labels) != np.max(lf_labels):
+                    if len(lfs) > 3:
+                        label_model = get_label_model(args.label_model, train_dataset.n_class,
+                                                      calibration=args.lm_calibration,
+                                                      threshold_selection=args.lm_threshold)
+                    else:
+                        label_model = get_label_model("mv", train_dataset.n_class)
+
+                    if isinstance(label_model, Snorkel):
+                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                        tune_label_model=args.tune_label_model,
+                                        scoring=args.tune_metric,
+                                        )
+                    lm_probs = label_model.predict_proba(L_train)
+
             if t % args.train_iter == args.train_iter - 1:
-                if retrain_label_model:
-                    retrain_label_model = False
-                    lf_labels = [lf.label for lf in lfs]
-                    L_train = create_label_matrix(train_dataset, lfs)
-                    L_val = create_label_matrix(valid_dataset, lfs)
-
-                    if np.min(lf_labels) != np.max(lf_labels):
-                        if len(lfs) > 3:
-                            label_model = get_label_model(args.label_model, train_dataset.n_class,
-                                                          calibration=args.lm_calib)
-                        else:
-                            label_model = get_label_model("mv", train_dataset.n_class)
-
-                        if isinstance(label_model, Snorkel):
-                            label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
-                                            tune_label_model=args.tune_label_model,
-                                            scoring=args.tune_metric)
-
                 if label_model is not None:
                     # evaluate LF quality
                     gt_train_labels = np.array(train_dataset.labels)
@@ -172,10 +184,8 @@ def main(args):
                                                       xs_tr=xs_tr,
                                                       ys_tr_soft=ys_tr_soft,
                                                       ys_tr_hard=ys_tr,
-                                                      xs_u=xs_u,
                                                       valid_dataset=valid_dataset,
                                                       soft_training=args.use_soft_labels,
-                                                      ssl_method=args.ssl_method,
                                                       tune_end_model=args.tune_end_model,
                                                       tune_metric=args.tune_metric,
                                                       seed=seed)
@@ -224,6 +234,7 @@ def main(args):
                         pprint.pprint(test_stats)
                 elif len(lfs) > 0:
                     # evaluate LF quality
+                    L_train = create_label_matrix(train_dataset, lfs)
                     gt_train_labels = np.array(train_dataset.labels)
                     lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels),
                                             n_class=train_dataset.n_class)
@@ -282,31 +293,40 @@ if __name__ == '__main__':
     parser.add_argument("--dataset-source", type=str, default="wrench", choices=["wrench", "nemo", "hub"])
     parser.add_argument("--dataset-path", type=str, default="./data/wrench_data", help="dataset path")
     parser.add_argument("--dataset-name", type=str, default="youtube", help="dataset name")
-    parser.add_argument("--feature-extractor", type=str, default="tfidf", help="feature for training end model")
+    parser.add_argument("--feature-extractor", type=str, default="bert", help="feature for training end model")
     parser.add_argument("--stop-words", type=str, default=None)
     parser.add_argument("--stemming", type=str, default="porter")
     parser.add_argument("--append-cdr", action="store_true", help="append cdr snippets to original dataset")
     # sampler
-    parser.add_argument("--sampler", type=str, default="passive", help="sample selector")
+    parser.add_argument("--sampler", type=str, default="passive", choices=["passive","uncertain", "QBC", "SEU", "weighted"],
+                        help="sample selector")
+    parser.add_argument("--embedding-model", type=str, default="all-MiniLM-L12-v2")
+    parser.add_argument("--distance", type=str, default="cosine")
+    parser.add_argument("--uncertain-metric", type=str, default="entropy")
+    parser.add_argument("--neighbor-num", type=int, default=100, help="neighbor count in KNN")
+    parser.add_argument("--alpha", type=float, default=0.5, help="trade-off between distance and uncertainty in [0,1], "
+                                                                 "higher value weights distance more.")
+    parser.add_argument("--beta", type=float, default=0.0, help="decay factor for distance-based voting in [0,inf). "
+                                                                "higher value weights close neighbors more.")
     # data programming
     parser.add_argument("--label-model", type=str, default="snorkel", help="label model used in DP paradigm")
-    parser.add_argument("--lm-calib", type=str, default="isotonic", help="calibration method for label model")
+    parser.add_argument("--lm-calibration", type=str, default=None, help="calibration method for label model")
+    parser.add_argument("--lm-threshold", type=str, default="auto", help="threshold selection for predicting label")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
-    parser.add_argument("--ssl-method", type=str, default=None, choices=[None, "self-training"])
     parser.add_argument("--default-class", type=int, default=None)
     parser.add_argument("--tune-label-model", type=bool, default=True, help="tune label model hyperparameters")
     parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
     parser.add_argument("--tune-metric", type=str, default="acc", help="evaluation metric used to tune model hyperparameters")
     # label function
-    parser.add_argument("--lf-agent", type=str, default="simulated", help="agent that return candidate LFs")
-    parser.add_argument("--lf-type", type=str, default="keyword", help="LF family")
-    parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for simulated agent")
-    parser.add_argument("--lf-acc-threshold", type=float, default=0.5, help="LF accuracy threshold for simulated agent")
-    parser.add_argument("--max-lf-per-iter", type=int, default=1, help="Maximum LF num per interaction")
-    parser.add_argument("--max-ngram", type=int, default=1, help="N-gram in keyword LF")
+    parser.add_argument("--lf-agent", type=str, default="chatgpt", help="agent that return candidate LFs")
+    parser.add_argument("--lf-type", type=str, default="keyword", choices=["keyword", "regex"], help="LF family")
+    parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for LF verification")
+    parser.add_argument("--lf-acc-threshold", type=float, default=0.6, help="LF accuracy threshold for verification")
+    parser.add_argument("--max-lf-per-iter", type=int, default=100, help="Maximum LF num per interaction")
+    parser.add_argument("--max-ngram", type=int, default=3, help="N-gram in keyword LF")
     # prompting method
-    parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo")
+    parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo-0613")
     parser.add_argument("--example-per-class", type=int, default=1)
     parser.add_argument("--return-explanation", action="store_true")
     parser.add_argument("--dp-aware", action="store_true")
@@ -317,7 +337,6 @@ if __name__ == '__main__':
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")
-    parser.add_argument("--results-dir", type=str,default="./results")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--display", action="store_true")

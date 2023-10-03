@@ -6,42 +6,53 @@ def create_prompt(dataset_name, dataset, example_per_class=1, example_selection=
     """
     Create prompt for label function generation
     """
-    if dataset_name in ["youtube", "sms"]:
+    if dataset_name == "youtube":
         task = "spam classification"
+        task_info = "In each iteration, the user will provide a comment for a video. Please decide whether the comment is a spam."
         class_info = "0 for non-spam, 1 for spam"
-    elif dataset_name in ["imdb", "yelp"]:
+    elif dataset_name == "sms":
+        task = "spam classification"
+        task_info = "In each iteration, the user will provide a text message. Please decide whether the message is a spam. Hint: promotional " \
+                    "messages should also be considered as spam messages."
+        class_info = "0 for non-spam, 1 for spam"
+    elif dataset_name == "imdb":
         task = "sentiment analysis"
+        task_info = "In each iteration, the user will provide a movie review. Please decide whether the review is positive or negative."
         class_info = "0 for negative, 1 for positive"
-    elif dataset_name in ["chemprot"]:
+    elif dataset_name == "yelp":
+        task = "sentiment analysis"
+        task_info = "In each iteration, the user will provide a restaurant review. Please decide whether the review is positive or negative."
+        class_info = "0 for negative, 1 for positive"
+    elif dataset_name == "chemprot":
         task = "biomedical relation extraction"
+        task_info = "In each iteration, the user will provide a biomedical statement, followed by a question asking the relationship between two chemicals occured in that statement." \
+                    "Please decide the relationship between the two chemicals based on the statement."
         class_info = "0 for chemical B (or A) is part of chemical A (or B), 1 for chemical B (or A) is the regulator of chemical A (or B). " \
                      "2 for chemical B (or A) is the upregulator of chemical A (or B). 3 for chemical B (or A) is the downregulator of chemical A (or B)." \
                      "4 for chemical B (or A) is the agnoist of chemical A (or B). 5 for chemical B (or A) is the antagonist of chemical A (or B)." \
                      "6 for chemical B (or A) is the modulator of chemical A (or B). 7 for chemical B (or A) is the cofactor of chemical A (or B)." \
                      "8 for chemical B (or A) is the substrate or product of chemical A (or B). 9 for the relationship between chemical A and chemical B is not listed above."
-    elif dataset_name in ["cdr"]:
-        task = "chemical disease relation extraction"
-        class_info = "0 for the chemical does not cause the disease, 1 for the chemical causes the disease"
-    else:
-        raise NotImplementedError("dataset task not identified.")
-
-    if dataset_name == "youtube":
-        task_info = "In each iteration, the user will provide a comment for a video. Please decide whether the comment is a spam."
-    elif dataset_name == "sms":
-        task_info = "In each iteration, the user will provide a text message. Please decide whether the message is a spam. Hint: promotional " \
-                    "messages should also be considered as spam messages."
-    elif dataset_name == "imdb":
-        task_info = "In each iteration, the user will provide a movie review. Please decide whether the review is positive or negative."
-    elif dataset_name == "yelp":
-        task_info = "In each iteration, the user will provide a product review. Please decide whether the review is positive or negative."
-    elif dataset_name == "chemprot":
-        task_info = "In each iteration, the user will provide a biomedical statement, followed by a question asking the relationship between two chemicals occured in that statement." \
-                    "Please decide the relationship between the two chemicals based on the statement."
     elif dataset_name == "cdr":
+        task = "chemical disease relation extraction"
         task_info = "In each iteration, the user will provide a biomedical passage, followed by a question asking whether a chemical causes " \
                     "a disease. Please decide whether the chemical causes the disease based on the passage. Hint: please be rigorous when making" \
                     "the causal claim, that is, only return 1 if the passage explictly states that the chemical causes the disease, and return 0" \
                     "when it only indicate a possibility of causal relationship."
+        class_info = "0 for the chemical does not cause the disease, 1 for the chemical causes the disease"
+    elif dataset_name == "agnews":
+        task = "topic classification"
+        task_info = "In each iteration, the user will provide a piece of news. Please classify the topic of the news into following categories."
+        class_info = "0 for world news, 1 for sports news, 2 for business news, 3 for science or high technology news."
+    elif dataset_name == "trec":
+        task = "topic classification"
+        task_info = "In each iteration, the user will provide a question. Please classify the topic of the question into following categories."
+        class_info = "0 for questions asking for description and abstract concept, 1 for questions asking for an entity (animal, plant, color, etc.), " \
+                     "2 for questions asking about a person or a group of persons, 3 for questions asking for an abbreviation," \
+                     "4 for questions asking for a location, 5 for questions asking for a number (data, postcode, etc.)."
+    elif dataset_name == "medical_abstract":
+        task = "topic classification"
+        task_info = "In each iteration, the user will provide a medical abstract. Please classify the topic of the abstract based on the disease it focuses on."
+        class_info = "0 for neoplasms diseases, 1 for digestive system diseases, 2 for nervous system diseases, 3 for cardiovascular diseases, 4 for general pathological conditions."
 
     if "lf_type" in kwargs:
         lf_type = kwargs["lf_type"]
