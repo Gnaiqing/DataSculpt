@@ -1,7 +1,3 @@
-import os
-import sys
-import json
-import gzip
 import re
 import numpy as np
 import html
@@ -19,8 +15,6 @@ import argparse
 from wrench.dataset import load_dataset, BaseDataset
 import pdb
 from pathlib import Path
-
-relation_extraction_datasets = ("chemprot", "cdr")
 
 
 def preprocess_text(text, stop_words=None, stemming="porter"):
@@ -107,6 +101,7 @@ def load_wrench_data(data_root, dataset_name, feature, stopwords=None, stemming=
     elif feature in ["tfidf", "bow"]:
         train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
                                                                   extract_feature=True, extract_fn=feature)
+        lf_stats = train_dataset.lf_summary()
     else:
         train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
                                                                   extract_feature=True, extract_fn=feature, cache_name=feature)

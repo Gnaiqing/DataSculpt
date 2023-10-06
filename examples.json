@@ -330,7 +330,7 @@
       "data": "Tiapride in levodopa-induced involuntary movements. Tiapride, a substituted benzamide derivative closely related to metoclopramide, reduced levodopa-induced peak dose involuntary movements in 16 patients with idiopathic Parkinson's disease. However, an unacceptable increase in disability from Parkinsonism with aggravation of end-of-dose akinesia led to its cessation in 14 patients. Tiapride had no effect on levodopa-induced early morning of \"off-period\" segmental dystonia. These results fail to support the notion that levodopa-induced dyskinesias are caused by overstimulation of a separate group of dopamine receptors. Does metoclopramide cause involuntary movements?",
       "label": 0,
       "keywords": "reduced, related to",
-      "regex": "{{A}}.{0,50}reduc[e,es,ed].{0,50}{{B}}",
+      "regex": "{{A}}.{0,50}reduc(e|es|ed).{0,50}{{B}}",
       "explanation": "The claim states that tiapride, which is closely related to metoclopramide, reduced levodopa-induced involuntary movements. However, this reduction led to an increase in disability and cessation of tiapride in some patients. This suggests that metoclopramide may also have similar effects, but the statement does not provide evidence of a causal relationship between metoclopramide and involuntary movements."
     },
     {
@@ -570,6 +570,143 @@
       "label": 4,
       "keywords": "duodenal ulcer disease",
       "explanation": "This paragraph is about duodenal ulcer disease, which does not lie in other categories."
+    }
+  ],
+  "spouse": [
+    {
+      "idx": 38,
+      "data": "Kerry says when Hanaki does n't want to eat his dinner the only person he will let spoon - feed him is his feisty little sister Marley - pictured left  Kerry describes finding out Hanaki has Down s as the  darkest day of my life . Are Marley and Hanaki spouses?",
+      "label": 0,
+      "regex": "{{A}}.{0,50}sister.{0,20}{{B}}",
+      "explanation": "The sentence says Marley is Hanaki's little sister, thus they are not spouses."
+    },
+    {
+      "idx": 6,
+      "data": "Williams and Ven Veen arrived at the ranch earlier in the week , where they held a welcome party for their guests Thursday . Are Williams and Ven Veen spouses?",
+      "label": 0,
+      "regex": "{{A}} and {{B}}",
+      "explanation": "The sentence only says Williams and Ven Veen held a welcome party together. It does not contain enough information to tell whether they are spouses."
+    },
+    {
+      "idx": 64,
+      "data": "Alana , 10 , dropped her first single , Movin  Up , on Monday  The video for the song features viral video artist Adam Barta , who also helped her to write the song  TLC reality series Here Comes Honey Boo Boo was canceled over a year ago over claims Mama June s ex molested her daughter Anna in 2002  Here Comes Honey Boo Boo has been canceled for nearly a year , but former TLC reality star Alana Thompson has already found a new focus for her energies having recently launched her music career with the debut of her new rap video . Are Movin and Anna spouses?",
+      "label": 0,
+      "regex": "None",
+      "explanation": "The sentence tells us Movin Up is Alana's first single, therefore there is no spouse relationship between Alana and Movin."
+    },
+    {
+      "idx": 279,
+      "data": "Hunter ( left ) was killed in a tragic  accident  , a spokeswoman for his father Eddie Montgomery ( right ) said  Davara Little , his ex - fiancée and mother of his four - month - old son , posted a touching message on her Facebook page saying :  Hunter gave me the greatest gift a man can give to a woman and no matter what happened to Hunter and I and where our relationship was going , I will forever be grateful for the sweet boy we have together .  Are hunter and Eddie Montgomery spouses?",
+      "label": 0,
+      "regex": "{{A}}.{0,50}father.{0,20}{{B}}",
+      "explanation": "The sentence says Eddie Montgomery is Hunter's father, therefore they are not spouses."
+    },
+    {
+      "idx": 532,
+      "data": "More executions this week – Two more death row inmates are scheduled to die this week On Wednesday Richard Glossip 52 faces death by lethal injection in Oklahoma for the 1997 murder of a motel owner a crime he denies committing A campaign to save him has drawn the support of a number of celebrities including actress Susan Sarandon and billionaire Richard Branson On Thursday Virginia is scheduled to put to death Alfredo Prieto a Salvadoran immigrant who was convicted of three murders and linked to six others His lawyers say he is mentally handicapped and should be spared the death penalty On Tuesday the Inter - American Human Rights Commission a body of the Organization of American States called for a stay of execution. Are Richard Glossip and Richard Branson spouses?",
+      "label": 0,
+      "regex": "None",
+      "explanation": "The sentence does not indicate that Richard Glossip and Richard Branson are spouses."
+    },
+    {
+      "idx": 942,
+      "data": "Alexa PenaVega and Carlos PenaVega will be the first married couple to compete on a season of  Dancing with the Stars . Are Alexa PenaVega and Carlos PenaVega spouses?",
+      "label": 1,
+      "regex": "{{A}}.{0,20}{{B}}.{0,50}married[SEP]{{A}}.{0,20}{{B}}.{0,50}couple",
+      "explanation": "The sentence says that Alexa PenaVega and Carlos PenaVega will be the first married couple, which indicate that they are spouses."
+    },
+    {
+      "idx": 52,
+      "data": "Michael Ulatowski ( pictured ) did not finalise the divorce with his wife Faith Jenkinson , but she went to marry another man ,  Andrew Asher . Are Faith Jenkinson and Andrew Asher spouses?",
+      "label": 1,
+      "regex": "{{A}}.{0,50}marry.{0,50}{{B}}[SEP]{{B}}.{0,50}marry.{0,50}{{A}}",
+      "explanation": "The sentence claims that Faith Jenkinson marry Andrew Asher, therefore they are spouses."
+    },
+    {
+      "idx": 67,
+      "data": "A judge spared her jail  When interviewed by police with a solicitor present in March this year , Jenkinson said she was still married to Mr Ulatowski when she married Mr Asher in 2010 . Are Jenkinson and Mr Asher spouses?",
+      "label": 1,
+      "regex": "{{A}}.{0,50}marr(y|ied|ies).{0,50}{{B}}[SEP]{{B}}.{0,50}marr(y|ied|ies).{0,50}{{A}}",
+      "explanation": "The sentence says that Jenkinson married Mr Asher in 2010, therefore they are spouses."
+    },
+    {
+      "idx": 304,
+      "data": "Kim looked like she was stifling a yawn as she browsed the store  Out and about : Kim s husband Kanye West was seen leaving his apartment in New York City on Sunday  Kylie recently shared a Snapchat video in which she is biting her 25-year - old rapper beau s lip . Are Kim and Kanye West spouses?",
+      "label": 1,
+      "regex": "{{A}}.{0,20}husband.{0,20}{{B}}[SEP]{{B}}.{0,20}husband.{0,20}{{A}}",
+      "explanation": "The sentence says Kanye West is Kim's husband. Therefore they are spouses."
+    },
+    {
+      "idx": 522,
+      "data": "Lady Bird Johnson was born as Claudia Alta Taylor and married Lyndon B. Johnson in 1934 . Are Claudia Alta Taylor and Lyndon B. Johnson spouses?",
+      "label": 1,
+      "regex": "{{A}}.{0,50}marr(y|ied|ies).{0,50}{{B}}[SEP]{{B}}.{0,50}marr(y|ied|ies).{0,50}{{A}}",
+      "explanation": "The sentence says Claudia Alta Taylor, also known as Lady Bird Johnson, married Lyndon B. Johnson in 1934. Therefore they are spouses."
+    }
+  ],
+  "semeval": [
+    {
+      "idx":2634,
+      "data": "A girl with a mitochondrial disorder who developed a neurodegenerative disorder with '' features of autism '' after getting a fever from vaccines . What is the relationship between vaccines and fever?",
+      "label": 0,
+      "regex": "{{B}}.{0,50}from.{0,50}{{A}}",
+      "explanation": "The sentence says the girl got a fever from vaccines, therefore the vaccines caused fever."
+    },
+    {
+      "idx": 3078,
+      "data": "This text indicates that the drawing was enclosed in a letter to Anna . What is the relationship between drawing and letter?",
+      "label": 1,
+      "regex": "{{A}}.{0,50}in.{0,50}{{B}}",
+      "explanation": "The drawing was enclosed in a letter, thus it is a component of the letter."
+    },
+    {
+      "idx": 6951,
+      "data": "The book was in a trunk full of documents handed over to the archive . What is the relationship between book and trunk?",
+      "label": 2,
+      "regex": "{{A}}.{0,50}in.{0,50}{{B}}",
+      "explanation": "The book was in a trunk of documents, so the trunk is the container for the book."
+    },
+    {
+      "idx": 5364,
+      "data": "We drained the liquid into the container . What is the relationship between liquid and container?",
+      "label": 3,
+      "regex": "{{A}}.{0,50}into.{0,50}{{B}}",
+      "explanation": "The liquid was drained into the container, so the container is the destination of the liquid."
+    },
+    {
+      "idx": 1494,
+      "data": "I asked the Something Awful Forum Goons to create products from the future , and by golly they did . What is the relationship between products and future?",
+      "label": 4,
+      "regex": "{{A}} from {{B}}",
+      "explanation": "The products come from the future, therefore the future is the origin of the products."
+    },
+    {
+      "idx": 1214,
+      "data": "This is how a politician uses tourism as an instrument for power . What is the relationship between tourism and politician?",
+      "label": 5,
+      "regex": "{{B}} use.{0,20}{{A}}",
+      "explanation": "The politician uses tourism as an instrument, therefore the tourism is an instrument of the politician."
+    },
+    {
+      "idx": 3385,
+      "data": "The Government spent nearly 10m euro of taxpayers ' money this year to cover the salaries of the ever-increasing coterie of special advisers . What is the relationship between advisers and coterie?",
+      "label": 6,
+      "regex": "{{B}} of {{A}}",
+      "explanation": "The coterie consists of advisers. Therefore the advisers are members of the coterie."
+    },
+    {
+      "idx": 5778,
+      "data": "Laws often refer to blade lengths and styles to define tools with useful purposes . What is the relationship between laws and lengths?",
+      "label": 7,
+      "regex": "{{A}}.{0,20}refer to.{0,20}{{B}}",
+      "explanation": "The laws refer to blade lengths and styles, thus the lengths are topics in laws."
+    },
+    {
+      "idx": 4192,
+      "data": "This is a brilliant piece of work by a fellow not one person in the music press would ever have tipped to write one of the great Scottish albums of the last five years . What is the relationship between piece and fellow?",
+      "label": 8,
+      "regex": "{{A}}.{0,50}by.{0,20}{{B}}",
+      "explanation": "The piece of work is done by a fellow, which means the relationship between them is product and producer."
     }
   ]
 }

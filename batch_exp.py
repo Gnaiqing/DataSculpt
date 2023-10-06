@@ -1,15 +1,17 @@
 import os
 data_root = "./data/wrench_data"
 datasets = [
-    # "youtube",
-    # "sms",
-    # "imdb",
-    # "yelp",
-    # "chemprot",
-    "cdr",
+    "youtube",
+    "sms",
+    "imdb",
+    "yelp",
     "agnews",
     "trec",
-    # "medical_abstract"
+    "medical_abstract",
+    "chemprot",
+    "cdr",
+    "spouse",
+    "semeval"
 ]
 
 samplers = [
@@ -48,8 +50,9 @@ for dataset in datasets:
         # base prompt
         cmd = f"python main.py --dataset-path {data_root} --dataset-name {dataset} --feature-extractor {feature_extractor} " \
               f"--sampler {sampler} --lf-agent {agent} --lf-type {lf_type} --lf-acc-threshold {acc} --tune-metric {metric} " \
-              f"--lm-threshold {lm_threshold} --max-ngram 3 --max-lf-per-iter 100 --display --save-wandb"
-        if dataset == "cdr" and lf_type == "regex":
+              f"--label-model Snorkel --lm-threshold {lm_threshold} --max-ngram 3 --max-lf-per-iter 100 --display --save-wandb"
+        # cmd += " --example-selection neighbor"
+        if dataset in ["cdr", "spouse"]:
             cmd += " --default-class 0"
         # print(cmd)
         # os.system(cmd)

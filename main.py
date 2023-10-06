@@ -2,10 +2,13 @@ import argparse
 from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
-from lf_family import create_label_matrix, KeywordLF, RegexLF
-from label_model import get_label_model, Snorkel
+from lf_family import create_label_matrix, RegexLF
+from label_model import get_wrench_label_model
 from end_model import train_disc_model
+from wrench.search import grid_search
+from wrench.search_space import SEARCH_SPACE
 from utils import print_dataset_stats, evaluate_lfs, evaluate_labels, evaluate_disc_model
+from gpt_utils import create_user_prompt
 import numpy as np
 from sklearn.metrics import accuracy_score
 import wandb
@@ -13,21 +16,20 @@ import pprint
 
 
 def main(args):
-    if args.lf_type == "keyword":
-        use_revert_index = True
-    else:
-        use_revert_index = False
-    train_dataset, valid_dataset, test_dataset = load_wrench_data(args.dataset_path, args.dataset_name, args.feature_extractor,
+    train_dataset, valid_dataset, test_dataset = load_wrench_data(data_root=args.dataset_path,
+                                                                  dataset_name=args.dataset_name,
+                                                                  feature=args.feature_extractor,
                                                                   stopwords=args.stop_words,
                                                                   stemming=args.stemming,
                                                                   max_ngram=args.max_ngram,
-                                                                  revert_index=use_revert_index,
+                                                                  revert_index=args.lf_type == "keyword",
                                                                   append_cdr=args.append_cdr)
 
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
     print_dataset_stats(train_dataset, split="train")
     print_dataset_stats(valid_dataset, split="valid")
     print_dataset_stats(test_dataset, split="test")
+
 
     if args.save_wandb:
         group_id = wandb.util.generate_id()
@@ -37,19 +39,88 @@ def main(args):
 
     rng = np.random.default_rng(args.seed)
     for run in range(args.runs):
-        if run < 2 and args.dataset_name == "cdr":
-            seed = rng.choice(10000)
-            continue
         if args.save_wandb:
             wandb.init(
                 project="LLMDP",
                 config=config_dict
             )
-            wandb.define_metric("test_acc", summary="mean")
-            wandb.define_metric("test_auc", summary="mean")
-            wandb.define_metric("test_f1", summary="mean")
-            wandb.define_metric("train_precision", summary="mean")
-            wandb.define_metric("train_coverage", summary="mean")
+
+        if args.lf_agent == "wrench":
+            seed = rng.choice(10000)
+            # use the LFs provided by wrench
+            L_train = np.array(train_dataset.weak_labels)
+            L_val = np.array(valid_dataset.weak_labels)
+            train_labels = np.array(train_dataset.labels)
+            lf_train_stats = evaluate_lfs(train_labels, L_train, n_class=train_dataset.n_class)
+            if args.label_model in ["snorkel", "mv"]:
+                label_model = get_label_model(args.label_model, train_dataset.n_class,
+                                              calibration=args.lm_calibration,
+                                              threshold_selection=args.lm_threshold)
+
+                if isinstance(label_model, Snorkel):
+                    label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                    tune_label_model=args.tune_label_model,
+                                    scoring=args.tune_metric,
+                                    )
+
+                # get label model predictions
+                ys_tr = label_model.predict(L_train)
+                ys_tr_soft = label_model.predict_proba(L_train)
+            else:
+                label_model = get_wrench_label_model(args.label_model, verbose=False)
+                search_space = get_search_space(args.label_model)
+                if args.tune_metric == "f1":
+                    if train_dataset.n_class == 2:
+                        metric = "f1_binary"
+                    else:
+                        metric = "f1_macro"
+                else:
+                    metric = "acc"
+                if search_space is not None:
+                    searched_paras = grid_search(label_model, dataset_train=train_dataset, dataset_valid=valid_dataset,
+                                                 metric=metric, direction='auto',
+                                                 search_space=search_space,
+                                                 n_repeats=1, n_trials=100, parallel=False)
+                    label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
+                label_model.fit(dataset_train=train_dataset,
+                                dataset_valid=valid_dataset,
+                                )
+                ys_tr = label_model.predict(train_dataset)
+                ys_tr_soft = label_model.predict_proba(train_dataset)
+
+            train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
+            ys_tr[~train_covered_indices] = -1
+            train_label_stats = evaluate_labels(train_labels, ys_tr, n_class=train_dataset.n_class)
+
+            # train end model
+            xs_tr = train_dataset.features[train_covered_indices, :]
+            ys_tr = ys_tr[train_covered_indices]
+            ys_tr_soft = ys_tr_soft[train_covered_indices, :]
+            disc_model = train_disc_model(model_type=args.end_model,
+                                          xs_tr=xs_tr,
+                                          ys_tr_soft=ys_tr_soft,
+                                          ys_tr_hard=ys_tr,
+                                          valid_dataset=valid_dataset,
+                                          soft_training=args.use_soft_labels,
+                                          tune_end_model=args.tune_end_model,
+                                          tune_metric=args.tune_metric,
+                                          seed=seed)
+            test_perf = evaluate_disc_model(disc_model, test_dataset)
+
+            if args.save_wandb:
+                wandb.run.summary["lf_num"] = L_train.shape[1]
+                wandb.run.summary["lf_acc_avg"] = lf_train_stats["lf_acc_avg"]
+                wandb.run.summary["lf_cov_avg"] = lf_train_stats["lf_cov_avg"]
+                wandb.run.summary["lf_overlap_avg"] = lf_train_stats["lf_overlap_avg"]
+                wandb.run.summary["lf_conflict_avg"] = lf_train_stats["lf_conflict_avg"]
+                wandb.run.summary["train_precision"] = train_label_stats["accuracy"]
+                wandb.run.summary["train_coverage"] = train_label_stats["coverage"]
+                wandb.run.summary["test_acc"] = test_perf["acc"]
+                wandb.run.summary["test_f1"] = test_perf["f1"]
+                wandb.run.summary["test_auc"] = test_perf["auc"]
+                wandb.finish()
+
+            continue
 
         seed = rng.choice(10000)
         sampler = get_sampler(train_dataset=train_dataset,
@@ -87,9 +158,11 @@ def main(args):
                                 max_lf_per_iter=args.max_lf_per_iter,
                                 )
         label_model = None
-        lm_probs = None # label model's output on train data
+        lm_probs = None  # label model's output on train data
         L_train = None
         retrain_label_model = False
+        best_valid_perf = 0.0
+        tolerance = 0
         lfs = []
         gt_labels = []
         response_labels = []
@@ -100,19 +173,9 @@ def main(args):
         for t in range(args.num_query):
             query_idx = sampler.sample(lm_probs=lm_probs)[0]
             if args.display:
-                if args.dataset_name == "cdr":
-                    text = train_dataset.examples[query_idx]["text"]
-                    entity1 = train_dataset.examples[query_idx]["entity1"]
-                    entity2 = train_dataset.examples[query_idx]["entity2"]
-                    print("\nQuery [{}]: {}. Does {} cause {}?".format(query_idx, text, entity1, entity2))
-                elif args.dataset_name == "chemprot":
-                    text = train_dataset.examples[query_idx]["text"]
-                    entity1 = train_dataset.examples[query_idx]["entity1"]
-                    entity2 = train_dataset.examples[query_idx]["entity2"]
-                    print("\nQuery [{}]: {}. What is the relationship between {} and {}?".format(query_idx,
-                                                                                                 text, entity1, entity2))
-                else:
-                    print("\nQuery [{}]: {}".format(query_idx,train_dataset.examples[query_idx]["text"]))
+                query = create_user_prompt("", args.dataset_name, train_dataset, query_idx)
+                print("\nQuery [{}]: {}".format(query_idx, query))
+
             cur_lfs = lf_agent.create_lf(query_idx)
             if args.display:
                 for lf in cur_lfs:
@@ -136,20 +199,55 @@ def main(args):
                 L_train = create_label_matrix(train_dataset, lfs)
                 L_val = create_label_matrix(valid_dataset, lfs)
 
-                if np.min(lf_labels) != np.max(lf_labels):
-                    if len(lfs) > 3:
-                        label_model = get_label_model(args.label_model, train_dataset.n_class,
-                                                      calibration=args.lm_calibration,
-                                                      threshold_selection=args.lm_threshold)
-                    else:
-                        label_model = get_label_model("mv", train_dataset.n_class)
+                if args.label_model in ["snorkel", "mv"]:
+                    if np.min(lf_labels) != np.max(lf_labels):
+                        if len(lfs) > 3:
+                            label_model = get_label_model(args.label_model, train_dataset.n_class,
+                                                          calibration=args.lm_calibration,
+                                                          threshold_selection=args.lm_threshold)
+                        else:
+                            label_model = get_label_model("mv", train_dataset.n_class)
 
-                    if isinstance(label_model, Snorkel):
-                        label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
-                                        tune_label_model=args.tune_label_model,
-                                        scoring=args.tune_metric,
-                                        )
-                    lm_probs = label_model.predict_proba(L_train)
+                        if isinstance(label_model, Snorkel):
+                            label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
+                                            tune_label_model=args.tune_label_model,
+                                            scoring=args.tune_metric,
+                                            )
+                        lm_probs = label_model.predict_proba(L_train)
+                else:
+                    if np.min(lf_labels) != np.max(lf_labels):
+                        if len(lfs) > 3:
+                            label_model = get_wrench_label_model(args.label_model, verbose=False)
+                            search_space = get_search_space(args.label_model)
+                            if args.tune_metric == "f1":
+                                if train_dataset.n_class == 2:
+                                    metric = "f1_binary"
+                                else:
+                                    metric = "f1_macro"
+                            else:
+                                metric = "acc"
+
+                            if search_space is not None:
+                                train_dataset.weak_labels = L_train.tolist()
+                                valid_dataset.weak_labels = L_val.tolist()
+                                searched_paras = grid_search(label_model, dataset_train=train_dataset,
+                                                             dataset_valid=valid_dataset,
+                                                             metric=metric, direction='auto',
+                                                             search_space=search_space,
+                                                             n_repeats=1, n_trials=100, parallel=False, progress_bar=False)
+                                label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
+
+                            label_model.fit(dataset_train=train_dataset,
+                                            dataset_valid=valid_dataset,
+                                            verbose=True
+                                            )
+                        else:
+                            train_dataset.weak_labels = L_train.tolist()
+                            valid_dataset.weak_labels = L_val.tolist()
+                            label_model = get_wrench_label_model("MV")
+                            label_model.fit(dataset_train=train_dataset,
+                                            dataset_valid=valid_dataset,
+                                            )
 
             if t % args.train_iter == args.train_iter - 1:
                 if label_model is not None:
@@ -160,8 +258,13 @@ def main(args):
                     lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels), n_class=valid_dataset.n_class)
 
                     # get label model predictions
-                    ys_tr = label_model.predict(L_train)
-                    ys_tr_soft = label_model.predict_proba(L_train)
+                    if args.label_model in ["snorkel", "mv"]:
+                        ys_tr = label_model.predict(L_train)
+                        ys_tr_soft = label_model.predict_proba(L_train)
+                    else:
+                        ys_tr = label_model.predict(L_train)
+                        ys_tr_soft = label_model.predict_proba(L_train)
+
                     train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
                     ys_tr[~train_covered_indices] = -1
 
@@ -176,7 +279,6 @@ def main(args):
 
                     # train end model
                     xs_tr = train_dataset.features[train_covered_indices, :]
-                    xs_u = train_dataset.features[~train_covered_indices, :]
                     ys_tr = ys_tr[train_covered_indices]
                     ys_tr_soft = ys_tr_soft[train_covered_indices, :]
                     if np.min(ys_tr) != np.max(ys_tr):
@@ -215,6 +317,19 @@ def main(args):
                         "test_f1": test_perf["f1"],
                         "test_auc": test_perf["auc"]
                     }
+                    if args.early_stop:
+                        if args.tune_metric == "f1":
+                            valid_perf = valid_stats["f1"]
+                        else:
+                            valid_perf = valid_stats["acc"]
+                        if valid_perf > best_valid_perf:
+                            best_valid_perf = valid_perf
+                            tolerance = 0
+                        else:
+                            tolerance += 1
+                            if tolerance >= 3:
+                                break
+
                     if args.save_wandb:
                         wandb.log(cur_result)
 
@@ -284,13 +399,40 @@ def main(args):
                         print("No enough LFs. Skip training label model and end model.")
 
         if args.save_wandb:
+            wandb.run.summary["num_query"] = t+1
+            wandb.run.summary["lf_num"] = len(lfs)
+            wandb.run.summary["response_acc"] = response_acc,
+
+            if len(lfs) > 0:
+                wandb.run.summary["lf_acc_avg"] = lf_train_stats["lf_acc_avg"]
+                wandb.run.summary["lf_cov_avg"] = lf_train_stats["lf_cov_avg"]
+                wandb.run.summary["lf_overlap_avg"] = lf_train_stats["lf_overlap_avg"]
+                wandb.run.summary["lf_conflict_avg"] = lf_train_stats["lf_conflict_avg"]
+            else:
+                wandb.run.summary["lf_acc_avg"] = np.nan
+                wandb.run.summary["lf_cov_avg"] = np.nan
+            if label_model is not None:
+                wandb.run.summary["train_precision"] = train_label_stats["accuracy"]
+                wandb.run.summary["train_coverage"] = train_label_stats["coverage"]
+            else:
+                wandb.run.summary["train_precision"] = np.nan
+                wandb.run.summary["train_coverage"] = np.nan
+
+            if disc_model is not None:
+                wandb.run.summary["test_acc"] = test_perf["acc"]
+                wandb.run.summary["test_f1"] = test_perf["f1"]
+                wandb.run.summary["test_auc"] = test_perf["auc"]
+            else:
+                wandb.run.summary["test_acc"] = np.nan
+                wandb.run.summary["test_f1"] = np.nan
+                wandb.run.summary["test_auc"] = np.nan
+
             wandb.finish()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # dataset
-    parser.add_argument("--dataset-source", type=str, default="wrench", choices=["wrench", "nemo", "hub"])
     parser.add_argument("--dataset-path", type=str, default="./data/wrench_data", help="dataset path")
     parser.add_argument("--dataset-name", type=str, default="youtube", help="dataset name")
     parser.add_argument("--feature-extractor", type=str, default="bert", help="feature for training end model")
@@ -309,17 +451,17 @@ if __name__ == '__main__':
     parser.add_argument("--beta", type=float, default=0.0, help="decay factor for distance-based voting in [0,inf). "
                                                                 "higher value weights close neighbors more.")
     # data programming
-    parser.add_argument("--label-model", type=str, default="snorkel", help="label model used in DP paradigm")
+    parser.add_argument("--label-model", type=str, default="snorkel",choices=["snorkel", "mv", "Snorkel"], help="label model used in DP paradigm")
     parser.add_argument("--lm-calibration", type=str, default=None, help="calibration method for label model")
-    parser.add_argument("--lm-threshold", type=str, default="auto", help="threshold selection for predicting label")
+    parser.add_argument("--lm-threshold", type=str, default="fixed", help="threshold selection for predicting label")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
-    parser.add_argument("--end-model", type=str, default="logistic", help="end model in DP paradigm")
+    parser.add_argument("--end-model", type=str, default="logistic", choices=["logistic", "mlp"], help="end model in DP paradigm")
     parser.add_argument("--default-class", type=int, default=None)
     parser.add_argument("--tune-label-model", type=bool, default=True, help="tune label model hyperparameters")
     parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
     parser.add_argument("--tune-metric", type=str, default="acc", help="evaluation metric used to tune model hyperparameters")
     # label function
-    parser.add_argument("--lf-agent", type=str, default="chatgpt", help="agent that return candidate LFs")
+    parser.add_argument("--lf-agent", type=str, default="chatgpt", choices=["chatgpt", "llama-2", "wrench"], help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", choices=["keyword", "regex"], help="LF family")
     parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for LF verification")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.6, help="LF accuracy threshold for verification")
@@ -330,13 +472,14 @@ if __name__ == '__main__':
     parser.add_argument("--example-per-class", type=int, default=1)
     parser.add_argument("--return-explanation", action="store_true")
     parser.add_argument("--dp-aware", action="store_true")
-    parser.add_argument("--example-selection", type=str, default="random")
+    parser.add_argument("--example-selection", type=str, default="random", choices=["random", "neighbor"])
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=1)
     parser.add_argument("--n-completion", type=int, default=1)
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")
+    parser.add_argument("--early-stop", action="store_true")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--display", action="store_true")

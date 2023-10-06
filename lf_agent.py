@@ -1,10 +1,12 @@
 import sklearn
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import os
 from numpy.random import default_rng
 from lf_family import KeywordLF, RegexLF
 import openai
-from gpt_utils import create_prompt
+from gpt_utils import create_prompt, create_cot_prompt, create_cot_user_prompt, create_user_prompt, extract_response, build_example
+from sentence_transformers import SentenceTransformer
 from data_utils import preprocess_text
 import nltk
 import re
@@ -60,64 +62,6 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
     return filtered_lfs
 
 
-def extract_label_keywords(content, cardinality=2):
-    """
-    Extract label and keywords from contents returned by LLMs
-    :param content: returned contents
-    :param cardinality: the cardinality of the dataset. Used to check label validity.
-    :return: label, keyword_list
-    """
-    label_match = re.search("LABEL:\s*\d+", content)
-    if label_match:
-        st, ed = label_match.span()
-        label = int(label_match.string[st+6:ed])
-        if label not in range(cardinality):
-            label = None
-    else:
-        label = None
-
-    keyword_match = re.search("KEYWORDS:.*\n", content)
-    if keyword_match:
-        st, ed = keyword_match.span()
-        keyword_list = [x.strip() for x in keyword_match.string[st+9:ed].split(',')]
-
-    else:
-        keyword_list = []
-
-    return label, keyword_list
-
-
-def extract_label_regex(content, cardinality=2):
-    """
-    Extract label and regular expression from contents returned by LLMs
-    :param content: returned contents
-    :param cardinality: the cardinality of the dataset. Used to check label validity.
-    :return: label, keyword_list
-    """
-    label_match = re.search("LABEL:\s*\d+", content)
-    if label_match:
-        st, ed = label_match.span()
-        label = int(label_match.string[st+6:ed])
-        if label not in range(cardinality):
-            label = None
-    else:
-        label = None
-
-    regex_match = re.search("REGEX:.*\n", content)
-    if regex_match:
-        st, ed = regex_match.span()
-        regex_list = []
-        for x in regex_match.string[st+6:ed].split('[SEP]'):
-            regex = x.strip(" '\"\n")
-            if regex.lower() != "none":
-                regex_list.append(regex)
-
-    else:
-        regex_list = []
-
-    return label, regex_list
-
-
 class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, **kwargs):
         """
@@ -135,6 +79,17 @@ class ChatGPTLFAgent:
         self.repeats = kwargs.get("repeats", 1)
         self.example_per_class = kwargs.get("example_per_class", 1)
         self.example_selection = kwargs.get("example_selection", "random")
+        if self.example_selection == "neighbor":
+            # compute the cosine similarity between training instances (unlabeled) and validation instances (labeled)
+            embedding_model = kwargs.get("embedding_model", "all-MiniLM-L12-v2")
+            self.embedding_model = SentenceTransformer(embedding_model)
+            train_sentences = [self.train_dataset.examples[i]["text"] for i in range(len(self.train_dataset))]
+            valid_sentences = [self.valid_dataset.examples[i]["text"] for i in range(len(self.valid_dataset))]
+            train_embedding = self.embedding_model.encode(train_sentences)
+            valid_embedding = self.embedding_model.encode(valid_sentences)
+            self.similarity_matrix = cosine_similarity(train_embedding, valid_embedding)
+            self.neighbors = np.argsort(- self.similarity_matrix, axis=-1)
+
         self.return_explanation = kwargs.get("return_explanation", False)
         self.play_expert_role = kwargs.get("play_expert_role", False)
         self.dp_aware = kwargs.get("dp_aware", False)
@@ -158,9 +113,12 @@ class ChatGPTLFAgent:
                                                                 example_per_class=self.example_per_class,
                                                                 example_selection=self.example_selection,
                                                                 explanation=self.return_explanation,
-                                                                expert_role=self.play_expert_role,
-                                                                dp_aware=self.dp_aware,
                                                                 lf_type=self.lf_type)
+        self.cot_system_prompt, self.cot_example_prompt = create_cot_prompt(self.kwargs["dataset_name"], self.valid_dataset,
+                                                                            example_per_class=self.example_per_class,
+                                                                            example_selection=self.example_selection,
+                                                                            explanation=self.return_explanation,
+                                                                            lf_type=self.lf_type)
         if self.display:
             print("ChatGPT system prompt:")
             print(self.system_prompt)
@@ -168,21 +126,48 @@ class ChatGPTLFAgent:
             print(self.example_prompt)
 
     def create_lf(self, query_idx):
-        if self.kwargs["dataset_name"] == "cdr":
-            text = self.train_dataset.examples[query_idx]["text"]
-            entity1 = self.train_dataset.examples[query_idx]["entity1"]
-            entity2 = self.train_dataset.examples[query_idx]["entity2"]
-            user_prompt = "{} User: {}. Does {} cause{}?\n Response: ".format(self.example_prompt, text, entity1, entity2)
-        elif self.kwargs["dataset_name"] == "chemprot":
-            text = self.train_dataset.examples[query_idx]["text"]
-            entity1 = self.train_dataset.examples[query_idx]["entity1"]
-            entity2 = self.train_dataset.examples[query_idx]["entity2"]
-            user_prompt = "{} User: {}. What is the relationship between {} and {}?\n Response: ".format(self.example_prompt,
-                                                                                                        text, entity1, entity2)
-        else:
-            text = self.train_dataset.examples[query_idx]["text"]
-            user_prompt = "{} User: {}\n Response: ".format(self.example_prompt, text)
+        if self.example_selection == "neighbor":
+            # select the examples that are closest to the test instance
+            n_examples = self.example_per_class * self.train_dataset.n_class
+            cur_examples = 0
+            k = 0
+            example_string = ""
+            while cur_examples < n_examples:
+                valid_idx = self.neighbors[query_idx][k]
+                k += 1
+                cot_user_prompt = create_cot_user_prompt(self.cot_example_prompt, self.kwargs["dataset_name"], self.valid_dataset, valid_idx)
+                messages = [
+                    {"role": "system", "content": self.cot_system_prompt},
+                    {"role": "user", "content": cot_user_prompt}
+                ]
+                try:
+                    response = openai.ChatCompletion.create(
+                        model=self.model,
+                        messages=messages,
+                        top_p=self.top_p,
+                        temperature=self.temperature,
+                        n=self.n_completion
+                    )
+                    response_content = response['choices'][0]["message"]["content"]
+                except openai.error.OpenAIError:
+                    response_content = ""
 
+                response_dict = extract_response(response_content)
+                if self.lf_type == "keyword" and response_dict["keyword_list"] is not None and len(response_dict["keyword_list"]) > 0:
+                    cur_examples += 1
+                    example_string += build_example(self.kwargs["dataset_name"], self.valid_dataset, valid_idx, response_dict)
+                elif self.lf_type == "regex" and response_dict["regex_list"] is not None and len(response_dict["regex_list"]) > 0:
+                    cur_examples += 1
+                    example_string += build_example(self.kwargs["dataset_name"], self.valid_dataset, valid_idx,
+                                                    response_dict)
+            if self.display:
+                print("In context examples:")
+                print(example_string)
+
+        else:
+            example_string = self.example_prompt
+
+        user_prompt = create_user_prompt(example_string, self.kwargs["dataset_name"], self.train_dataset, query_idx)
         candidate_lfs = []
         if self.lf_type == "keyword":
             messages = [
@@ -207,10 +192,15 @@ class ChatGPTLFAgent:
                     response_content = response['choices'][j]["message"]["content"]
                     if self.display:
                         print("Response {}: {}\n".format(j, response_content))
-                    label, keywords = extract_label_keywords(response_content, self.train_dataset.n_class)
+
+                    response_dict = extract_response(response_content)
+                    label = response_dict["label"]
+                    keywords = response_dict["keyword_list"]
+                    # label, keywords = extract_label_keywords(response_content, self.train_dataset.n_class)
                     if label in range(self.train_dataset.n_class):
                         output_labels.append(label)
-                    keyword_list += keywords
+                    if isinstance(keyword_list, list):
+                        keyword_list += keywords
 
                 if len(output_labels) > 0:
                     label = np.bincount(output_labels).argmax()
@@ -248,10 +238,14 @@ class ChatGPTLFAgent:
                     response_content = response['choices'][j]["message"]["content"]
                     if self.display:
                         print("Response {}: {}\n".format(j, response_content))
-                    label, regexs = extract_label_regex(response_content, self.train_dataset.n_class)
+                    response_dict = extract_response(response_content)
+                    label = response_dict["label"]
+                    regexs = response_dict["regex_list"]
+                    # label, regexs = extract_label_regex(response_content, self.train_dataset.n_class)
                     if label in range(self.train_dataset.n_class):
                         output_labels.append(label)
-                    regex_list += regexs
+                    if isinstance(regexs, list):
+                        regex_list += regexs
 
                 if len(output_labels) > 0:
                     label = np.bincount(output_labels).argmax()
@@ -341,46 +335,3 @@ class SimLFAgent:
                 self.lfs.append(lf)
 
         return filtered_lfs
-
-
-# class SentimentLexicon:
-#     def __init__(self, data_root):
-#         pos_words_file = os.path.join(data_root, 'opinion-lexicon-English/positive-words.txt')
-#         neg_words_file = os.path.join(data_root, 'opinion-lexicon-English/negative-words.txt')
-#
-#         pos_tokens = list()
-#         neg_tokens = list()
-#         with open(pos_words_file, encoding='ISO-8859-1') as f:
-#             for i, line in enumerate(f):
-#                 if i >= 30:
-#                     token = line.rstrip()
-#                     pos_tokens.append(token)
-#         with open(neg_words_file, encoding='ISO-8859-1') as f:
-#             for i, line in enumerate(f):
-#                 if i >= 31:
-#                     token = line.rstrip()
-#                     neg_tokens.append(token)
-#
-#         token_sentiment = {token: 1 for token in pos_tokens}
-#         token_sentiment.update({token: -1 for token in neg_tokens})
-#
-#         self.pos_tokens = pos_tokens
-#         self.neg_tokens = neg_tokens
-#         self.token_sentiment = token_sentiment
-#
-#     def tokens_to_sentiments(self, tokens):
-#         """Return sentiments of tokens in a sentence
-#         """
-#         sentiments = np.array([self.token_sentiment.get(token, 0) for token in tokens])
-#
-#         return sentiments
-#
-#     def tokens_with_sentiment(self, tokens, sentiment):
-#         """Return tokens with specified sentiment
-#         """
-#         sentiments = self.tokens_to_sentiments(tokens)
-#         tokens = np.array(tokens)[sentiments == sentiment]
-#
-#         return tokens
-
-

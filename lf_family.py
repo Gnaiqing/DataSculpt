@@ -90,7 +90,7 @@ class RegexLF(AbstractLF):
         self.label = label
 
     def __eq__(self, other):
-        if isinstance(other, KeywordLF):
+        if isinstance(other, RegexLF):
             if self.regex == other.regex and self.label == other.label:
                 return True
 
