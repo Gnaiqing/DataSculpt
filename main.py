@@ -3,7 +3,7 @@ from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
 from lf_family import create_label_matrix, RegexLF
-from label_model import get_wrench_label_model
+from label_model import get_wrench_label_model, is_valid_snorkel_input
 from end_model import train_disc_model
 from wrench.search import grid_search
 from wrench.search_space import SEARCH_SPACE
@@ -49,44 +49,26 @@ def main(args):
             seed = rng.choice(10000)
             # use the LFs provided by wrench
             L_train = np.array(train_dataset.weak_labels)
-            L_val = np.array(valid_dataset.weak_labels)
             train_labels = np.array(train_dataset.labels)
             lf_train_stats = evaluate_lfs(train_labels, L_train, n_class=train_dataset.n_class)
-            if args.label_model in ["snorkel", "mv"]:
-                label_model = get_label_model(args.label_model, train_dataset.n_class,
-                                              calibration=args.lm_calibration,
-                                              threshold_selection=args.lm_threshold)
 
-                if isinstance(label_model, Snorkel):
-                    label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
-                                    tune_label_model=args.tune_label_model,
-                                    scoring=args.tune_metric,
-                                    )
-
-                # get label model predictions
-                ys_tr = label_model.predict(L_train)
-                ys_tr_soft = label_model.predict_proba(L_train)
-            else:
-                label_model = get_wrench_label_model(args.label_model, verbose=False)
-                search_space = get_search_space(args.label_model)
+            label_model = get_wrench_label_model(args.label_model, verbose=False)
+            search_space = SEARCH_SPACE.get(args.label_model, None)
+            if search_space is not None and args.tune_label_model:
                 if args.tune_metric == "f1":
-                    if train_dataset.n_class == 2:
-                        metric = "f1_binary"
-                    else:
-                        metric = "f1_macro"
+                    metric = "f1_binary" if train_dataset.n_class == 2 else "f1_macro"
                 else:
                     metric = "acc"
-                if search_space is not None:
-                    searched_paras = grid_search(label_model, dataset_train=train_dataset, dataset_valid=valid_dataset,
-                                                 metric=metric, direction='auto',
-                                                 search_space=search_space,
-                                                 n_repeats=1, n_trials=100, parallel=False)
-                    label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
-                label_model.fit(dataset_train=train_dataset,
-                                dataset_valid=valid_dataset,
-                                )
-                ys_tr = label_model.predict(train_dataset)
-                ys_tr_soft = label_model.predict_proba(train_dataset)
+                searched_paras = grid_search(label_model, dataset_train=train_dataset, dataset_valid=valid_dataset,
+                                             metric=metric, direction='auto',
+                                             search_space=search_space,
+                                             n_repeats=1, n_trials=100, parallel=False)
+                label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
+            label_model.fit(dataset_train=train_dataset,
+                            dataset_valid=valid_dataset,
+                            )
+            ys_tr = label_model.predict(train_dataset)
+            ys_tr_soft = label_model.predict_proba(train_dataset)
 
             train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
             ys_tr[~train_covered_indices] = -1
@@ -143,7 +125,6 @@ def main(args):
                                 example_per_class=args.example_per_class,
                                 example_selection=args.example_selection,
                                 return_explanation=args.return_explanation,
-                                dp_aware=args.dp_aware,
                                 temperature=args.temperature,
                                 top_p=args.top_p,
                                 n_completion=args.n_completion,
@@ -158,17 +139,17 @@ def main(args):
                                 max_lf_per_iter=args.max_lf_per_iter,
                                 )
         label_model = None
+        disc_model = None
         lm_probs = None  # label model's output on train data
         L_train = None
-        retrain_label_model = False
+        L_val = None
         best_valid_perf = 0.0
         tolerance = 0
+        searched_paras = {}
         lfs = []
         gt_labels = []
         response_labels = []
-        if args.default_class is not None:
-            default_lf = RegexLF(".", args.default_class)
-            lfs.append(default_lf)
+        start = 0  # the number of LFs applied in previous iteration
 
         for t in range(args.num_query):
             query_idx = sampler.sample(lm_probs=lm_probs)[0]
@@ -191,194 +172,33 @@ def main(args):
             for lf in cur_lfs:
                 if not lf.isempty():
                     lfs.append(lf)
-                    retrain_label_model = True
 
-            if retrain_label_model:
-                retrain_label_model = False
-                lf_labels = [lf.label for lf in lfs]
-                L_train = create_label_matrix(train_dataset, lfs)
-                L_val = create_label_matrix(valid_dataset, lfs)
-
-                if args.label_model in ["snorkel", "mv"]:
-                    if np.min(lf_labels) != np.max(lf_labels):
-                        if len(lfs) > 3:
-                            label_model = get_label_model(args.label_model, train_dataset.n_class,
-                                                          calibration=args.lm_calibration,
-                                                          threshold_selection=args.lm_threshold)
-                        else:
-                            label_model = get_label_model("mv", train_dataset.n_class)
-
-                        if isinstance(label_model, Snorkel):
-                            label_model.fit(L_train, L_val, np.array(valid_dataset.labels),
-                                            tune_label_model=args.tune_label_model,
-                                            scoring=args.tune_metric,
-                                            )
-                        lm_probs = label_model.predict_proba(L_train)
+            if len(lfs) > start:
+                # calculate weak label matrix
+                if start == 0:
+                    L_train = create_label_matrix(train_dataset, lfs)
+                    L_val = create_label_matrix(valid_dataset, lfs)
                 else:
-                    if np.min(lf_labels) != np.max(lf_labels):
-                        if len(lfs) > 3:
-                            label_model = get_wrench_label_model(args.label_model, verbose=False)
-                            search_space = get_search_space(args.label_model)
-                            if args.tune_metric == "f1":
-                                if train_dataset.n_class == 2:
-                                    metric = "f1_binary"
-                                else:
-                                    metric = "f1_macro"
-                            else:
-                                metric = "acc"
+                    L_train_new = create_label_matrix(train_dataset, lfs[start:])
+                    L_val_new = create_label_matrix(valid_dataset, lfs[start:])
+                    L_train = np.concatenate((L_train, L_train_new), axis=1)
+                    L_val = np.concatenate((L_val, L_val_new), axis=1)
+                    start = len(lfs)
 
-                            if search_space is not None:
-                                train_dataset.weak_labels = L_train.tolist()
-                                valid_dataset.weak_labels = L_val.tolist()
-                                searched_paras = grid_search(label_model, dataset_train=train_dataset,
-                                                             dataset_valid=valid_dataset,
-                                                             metric=metric, direction='auto',
-                                                             search_space=search_space,
-                                                             n_repeats=1, n_trials=100, parallel=False, progress_bar=False)
-                                label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
+                # update weak label matrix
+                train_dataset.weak_labels = L_train.tolist()
+                valid_dataset.weak_labels = L_val.tolist()
+                if is_valid_snorkel_input(lfs):
+                    label_model = get_wrench_label_model(args.label_model, verbose=False, **searched_paras)
+                else:
+                    label_model = get_wrench_label_model("MV")
 
-                            label_model.fit(dataset_train=train_dataset,
-                                            dataset_valid=valid_dataset,
-                                            verbose=True
-                                            )
-                        else:
-                            train_dataset.weak_labels = L_train.tolist()
-                            valid_dataset.weak_labels = L_val.tolist()
-                            label_model = get_wrench_label_model("MV")
-                            label_model.fit(dataset_train=train_dataset,
-                                            dataset_valid=valid_dataset,
-                                            )
+                label_model.fit(dataset_train=train_dataset,
+                                dataset_valid=valid_dataset,
+                                )
 
             if t % args.train_iter == args.train_iter - 1:
-                if label_model is not None:
-                    # evaluate LF quality
-                    gt_train_labels = np.array(train_dataset.labels)
-                    lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels), n_class=train_dataset.n_class)
-                    gt_valid_labels = np.array(valid_dataset.labels)
-                    lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels), n_class=valid_dataset.n_class)
-
-                    # get label model predictions
-                    if args.label_model in ["snorkel", "mv"]:
-                        ys_tr = label_model.predict(L_train)
-                        ys_tr_soft = label_model.predict_proba(L_train)
-                    else:
-                        ys_tr = label_model.predict(L_train)
-                        ys_tr_soft = label_model.predict_proba(L_train)
-
-                    train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
-                    ys_tr[~train_covered_indices] = -1
-
-                    ys_val = label_model.predict(L_val)
-                    valid_covered_indices = (np.max(L_val, axis=1) != -1) & (ys_val != -1)  # indices covered by LFs
-                    ys_val[~valid_covered_indices] = -1
-
-                    # evaluate label quality
-                    response_acc = accuracy_score(gt_labels, response_labels)
-                    train_label_stats = evaluate_labels(gt_train_labels, ys_tr, n_class=train_dataset.n_class)
-                    valid_label_stats = evaluate_labels(gt_valid_labels, ys_val, n_class=valid_dataset.n_class)
-
-                    # train end model
-                    xs_tr = train_dataset.features[train_covered_indices, :]
-                    ys_tr = ys_tr[train_covered_indices]
-                    ys_tr_soft = ys_tr_soft[train_covered_indices, :]
-                    if np.min(ys_tr) != np.max(ys_tr):
-                        disc_model = train_disc_model(model_type=args.end_model,
-                                                      xs_tr=xs_tr,
-                                                      ys_tr_soft=ys_tr_soft,
-                                                      ys_tr_hard=ys_tr,
-                                                      valid_dataset=valid_dataset,
-                                                      soft_training=args.use_soft_labels,
-                                                      tune_end_model=args.tune_end_model,
-                                                      tune_metric=args.tune_metric,
-                                                      seed=seed)
-                        # evaluate end model performance
-                        test_preds = disc_model.predict(test_dataset.features)
-                        gt_test_labels = np.array(test_dataset.labels)
-                        test_stats = evaluate_labels(gt_test_labels, test_preds, n_class=test_dataset.n_class)
-                        test_perf = evaluate_disc_model(disc_model, test_dataset)
-
-                        valid_preds = disc_model.predict(valid_dataset.features)
-                        valid_stats = evaluate_labels(gt_valid_labels, valid_preds, n_class=valid_dataset.n_class)
-
-                    else:
-                        test_perf = {"acc": np.nan, "f1": np.nan, "auc": np.nan}
-                        valid_stats = {}
-                        test_stats = {}
-
-                    cur_result = {
-                        "num_query": t+1,
-                        "lf_num": len(lfs),
-                        "lf_acc_avg": lf_train_stats["lf_acc_avg"],
-                        "lf_cov_avg": lf_train_stats["lf_cov_avg"],
-                        "response_acc": response_acc,
-                        "train_precision": train_label_stats["accuracy"],
-                        "train_coverage": train_label_stats["coverage"],
-                        "test_acc": test_perf["acc"],
-                        "test_f1": test_perf["f1"],
-                        "test_auc": test_perf["auc"]
-                    }
-                    if args.early_stop:
-                        if args.tune_metric == "f1":
-                            valid_perf = valid_stats["f1"]
-                        else:
-                            valid_perf = valid_stats["acc"]
-                        if valid_perf > best_valid_perf:
-                            best_valid_perf = valid_perf
-                            tolerance = 0
-                        else:
-                            tolerance += 1
-                            if tolerance >= 3:
-                                break
-
-                    if args.save_wandb:
-                        wandb.log(cur_result)
-
-                    if args.display:
-                        print(f"After {t+1} iterations:")
-                        print("Train LF stats:")
-                        pprint.pprint(lf_train_stats)
-                        print("Valid LF stats:")
-                        pprint.pprint(lf_val_stats)
-                        print("Train label stats (label model output):")
-                        pprint.pprint(train_label_stats)
-                        print("Valid label stats (label model output):")
-                        pprint.pprint(valid_label_stats)
-                        print("Valid prediction stats (end model output):")
-                        pprint.pprint(valid_stats)
-                        print("Test prediction stats (end model output):")
-                        pprint.pprint(test_stats)
-                elif len(lfs) > 0:
-                    # evaluate LF quality
-                    L_train = create_label_matrix(train_dataset, lfs)
-                    gt_train_labels = np.array(train_dataset.labels)
-                    lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels),
-                                            n_class=train_dataset.n_class)
-                    gt_valid_labels = np.array(valid_dataset.labels)
-                    lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels),
-                                                n_class=valid_dataset.n_class)
-                    response_acc = accuracy_score(gt_labels, response_labels)
-                    cur_result = {
-                        "num_query": t + 1,
-                        "lf_num": len(lfs),
-                        "lf_acc_avg": lf_train_stats["lf_acc_avg"],
-                        "lf_cov_avg": lf_train_stats["lf_cov_avg"],
-                        "response_acc": response_acc,
-                        "train_precision": np.nan,
-                        "train_coverage": np.nan,
-                        "test_acc": np.nan,
-                        "test_f1": np.nan,
-                        "test_auc": np.nan
-                    }
-                    if args.save_wandb:
-                        wandb.log(cur_result)
-                    if args.display:
-                        print(f"After {t+1} iterations:")
-                        print("Train LF stats:")
-                        pprint.pprint(lf_train_stats)
-                        print("Valid LF stats:")
-                        pprint.pprint(lf_val_stats)
-                        print("No enough LFs. Skip training label model and end model.")
-                else:
+                if len(lfs) == 0:
                     response_acc = accuracy_score(gt_labels, response_labels)
                     cur_result = {
                         "num_query": t + 1,
@@ -395,13 +215,140 @@ def main(args):
                     if args.save_wandb:
                         wandb.log(cur_result)
                     if args.display:
-                        print(f"After {t+1} iterations:")
+                        print(f"After {t + 1} iterations:")
                         print("No enough LFs. Skip training label model and end model.")
+
+                    continue
+
+                elif is_valid_snorkel_input(lfs):
+                    label_model = get_wrench_label_model(args.label_model, verbose=False)
+                    search_space = SEARCH_SPACE.get(args.label_model, None)
+                else:
+                    label_model = get_wrench_label_model("MV")
+                    search_space = None
+
+                # evaluate LF quality
+                lf_labels = [lf.label for lf in lfs]
+                gt_train_labels = np.array(train_dataset.labels)
+                lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels), n_class=train_dataset.n_class)
+                gt_valid_labels = np.array(valid_dataset.labels)
+                lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels), n_class=valid_dataset.n_class)
+
+
+                if args.tune_metric == "f1":
+                    metric = "f1_binary" if train_dataset.n_class == 2 else "f1_macro"
+                else:
+                    metric = "acc"
+
+                if search_space is not None and args.tune_label_model:
+                    train_dataset.weak_labels = L_train.tolist()
+                    valid_dataset.weak_labels = L_val.tolist()
+                    searched_paras = grid_search(label_model, dataset_train=train_dataset,
+                                                 dataset_valid=valid_dataset,
+                                                 metric=metric, direction='auto',
+                                                 search_space=search_space,
+                                                 n_repeats=1, n_trials=100, parallel=False)
+                    label_model = get_wrench_label_model(args.label_model, **searched_paras, verbose=False)
+
+                label_model.fit(dataset_train=train_dataset,
+                                dataset_valid=valid_dataset,
+                                )
+                ys_tr = label_model.predict(L_train)
+                ys_tr_soft = label_model.predict_proba(L_train)
+                train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
+                ys_val = label_model.predict(L_val)
+                valid_covered_indices = (np.max(L_val, axis=1) != -1) & (ys_val != -1)  # indices covered by LFs
+
+                if args.default_class is None:
+                    ys_tr[~train_covered_indices] = -1
+                    ys_val[~valid_covered_indices] = -1
+                else:
+                    ys_tr[~train_covered_indices] = args.default_class
+                    ys_val[~valid_covered_indices] = args.default_class
+                    train_covered_indices = np.repeat(True, len(train_dataset))
+
+                # evaluate label quality
+                response_acc = accuracy_score(gt_labels, response_labels)
+                train_label_stats = evaluate_labels(gt_train_labels, ys_tr, n_class=train_dataset.n_class)
+                valid_label_stats = evaluate_labels(gt_valid_labels, ys_val, n_class=valid_dataset.n_class)
+
+                # train end model
+                xs_tr = train_dataset.features[train_covered_indices, :]
+                ys_tr = ys_tr[train_covered_indices]
+                ys_tr_soft = ys_tr_soft[train_covered_indices, :]
+                if np.min(ys_tr) != np.max(ys_tr):
+                    disc_model = train_disc_model(model_type=args.end_model,
+                                                  xs_tr=xs_tr,
+                                                  ys_tr_soft=ys_tr_soft,
+                                                  ys_tr_hard=ys_tr,
+                                                  valid_dataset=valid_dataset,
+                                                  soft_training=args.use_soft_labels,
+                                                  tune_end_model=args.tune_end_model,
+                                                  tune_metric=args.tune_metric,
+                                                  seed=seed)
+                    # evaluate end model performance
+                    test_preds = disc_model.predict(test_dataset.features)
+                    gt_test_labels = np.array(test_dataset.labels)
+                    test_stats = evaluate_labels(gt_test_labels, test_preds, n_class=test_dataset.n_class)
+                    test_perf = evaluate_disc_model(disc_model, test_dataset)
+
+                    valid_preds = disc_model.predict(valid_dataset.features)
+                    valid_stats = evaluate_labels(gt_valid_labels, valid_preds, n_class=valid_dataset.n_class)
+
+                else:
+                    test_perf = {"acc": np.nan, "f1": np.nan, "auc": np.nan}
+                    valid_stats = {}
+                    test_stats = {}
+
+                cur_result = {
+                    "num_query": t+1,
+                    "lf_num": len(lfs),
+                    "lf_acc_avg": lf_train_stats["lf_acc_avg"],
+                    "lf_cov_avg": lf_train_stats["lf_cov_avg"],
+                    "response_acc": response_acc,
+                    "train_precision": train_label_stats["accuracy"],
+                    "train_coverage": train_label_stats["coverage"],
+                    "test_acc": test_perf["acc"],
+                    "test_f1": test_perf["f1"],
+                    "test_auc": test_perf["auc"]
+                }
+                if args.early_stop:
+                    if args.tune_metric == "f1":
+                        valid_perf = valid_stats["f1"]
+                    else:
+                        valid_perf = valid_stats["acc"]
+                    if valid_perf > best_valid_perf:
+                        best_valid_perf = valid_perf
+                        tolerance = 0
+                    else:
+                        tolerance += 1
+                        if tolerance >= 3:
+                            break
+
+                if args.save_wandb:
+                    wandb.log(cur_result)
+
+                if args.display:
+                    print(f"After {t+1} iterations:")
+                    print("Train LF stats:")
+                    pprint.pprint(lf_train_stats)
+                    print("Valid LF stats:")
+                    pprint.pprint(lf_val_stats)
+                    print("Train label stats (label model output):")
+                    pprint.pprint(train_label_stats)
+                    print("Valid label stats (label model output):")
+                    pprint.pprint(valid_label_stats)
+                    print("Valid prediction stats (end model output):")
+                    pprint.pprint(valid_stats)
+                    print("Test prediction stats (end model output):")
+                    pprint.pprint(test_stats)
+
+
 
         if args.save_wandb:
             wandb.run.summary["num_query"] = t+1
             wandb.run.summary["lf_num"] = len(lfs)
-            wandb.run.summary["response_acc"] = response_acc,
+            wandb.run.summary["response_acc"] = response_acc
 
             if len(lfs) > 0:
                 wandb.run.summary["lf_acc_avg"] = lf_train_stats["lf_acc_avg"]
@@ -451,9 +398,7 @@ if __name__ == '__main__':
     parser.add_argument("--beta", type=float, default=0.0, help="decay factor for distance-based voting in [0,inf). "
                                                                 "higher value weights close neighbors more.")
     # data programming
-    parser.add_argument("--label-model", type=str, default="snorkel",choices=["snorkel", "mv", "Snorkel"], help="label model used in DP paradigm")
-    parser.add_argument("--lm-calibration", type=str, default=None, help="calibration method for label model")
-    parser.add_argument("--lm-threshold", type=str, default="fixed", help="threshold selection for predicting label")
+    parser.add_argument("--label-model", type=str, default="Snorkel", choices=["Snorkel", "MeTaL", "MV"], help="label model used in DP paradigm")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
     parser.add_argument("--end-model", type=str, default="logistic", choices=["logistic", "mlp"], help="end model in DP paradigm")
     parser.add_argument("--default-class", type=int, default=None)
@@ -471,14 +416,13 @@ if __name__ == '__main__':
     parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo-0613")
     parser.add_argument("--example-per-class", type=int, default=1)
     parser.add_argument("--return-explanation", action="store_true")
-    parser.add_argument("--dp-aware", action="store_true")
     parser.add_argument("--example-selection", type=str, default="random", choices=["random", "neighbor"])
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=1)
     parser.add_argument("--n-completion", type=int, default=1)
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
-    parser.add_argument("--train-iter", type=int, default=5, help="evaluation interval")
+    parser.add_argument("--train-iter", type=int, default=10, help="evaluation interval")
     parser.add_argument("--early-stop", action="store_true")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)

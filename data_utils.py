@@ -1,9 +1,6 @@
 import re
 import numpy as np
 import html
-import pandas as pd
-from tqdm import tqdm
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import nltk
 from nltk.util import ngrams
 from nltk.corpus import stopwords
@@ -15,6 +12,8 @@ import argparse
 from wrench.dataset import load_dataset, BaseDataset
 import pdb
 from pathlib import Path
+import os
+import json
 
 
 def preprocess_text(text, stop_words=None, stemming="porter"):
@@ -45,10 +44,19 @@ def preprocess_text(text, stop_words=None, stemming="porter"):
     return processed_text
 
 
-def build_revert_index(dataset, stop_words=None, stemming="porter", max_ngram=1):
+def build_revert_index(dataset, stop_words=None, stemming="porter", max_ngram=1, cache_path=None):
     """
     Build reverted index for the given text dataset
     """
+    if cache_path is not None:
+        if os.path.exists(cache_path):
+            with open(cache_path) as infile:
+                reverted_index = json.load(infile)
+                for phrase in reverted_index:
+                    reverted_index[phrase] = np.array(reverted_index[phrase])
+
+                return reverted_index
+
     # preprocess data
     corpus = [dataset.examples[idx]["text"] for idx in range(len(dataset))]
     if stop_words is not None:
@@ -88,6 +96,10 @@ def build_revert_index(dataset, stop_words=None, stemming="porter", max_ngram=1)
                 else:
                     reverted_index[phrase] = [idx]
 
+    if cache_path is not None:
+        with open(cache_path, "w") as outfile:
+            json.dump(reverted_index, outfile)
+
     for phrase in reverted_index:
         reverted_index[phrase] = np.array(reverted_index[phrase])
 
@@ -101,15 +113,21 @@ def load_wrench_data(data_root, dataset_name, feature, stopwords=None, stemming=
     elif feature in ["tfidf", "bow"]:
         train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
                                                                   extract_feature=True, extract_fn=feature)
-        lf_stats = train_dataset.lf_summary()
     else:
         train_dataset, valid_dataset, test_dataset = load_dataset(data_root, dataset_name,
                                                                   extract_feature=True, extract_fn=feature, cache_name=feature)
 
+
     if revert_index:
-        train_dataset.revert_index = build_revert_index(train_dataset, stop_words=stopwords, stemming=stemming, max_ngram=max_ngram)
-        valid_dataset.revert_index = build_revert_index(valid_dataset, stop_words=stopwords, stemming=stemming, max_ngram=max_ngram)
-        test_dataset.revert_index = build_revert_index(test_dataset, stop_words=stopwords, stemming=stemming, max_ngram=max_ngram)
+        train_cache_path = Path(data_root) / dataset_name / "train_index.json"
+        valid_cache_path = Path(data_root) / dataset_name / "valid_index.json"
+        test_cache_path = Path(data_root) / dataset_name / "test_index.json"
+        train_dataset.revert_index = build_revert_index(train_dataset, stop_words=stopwords, stemming=stemming,
+                                                        max_ngram=max_ngram, cache_path=train_cache_path)
+        valid_dataset.revert_index = build_revert_index(valid_dataset, stop_words=stopwords, stemming=stemming,
+                                                        max_ngram=max_ngram, cache_path=valid_cache_path)
+        test_dataset.revert_index = build_revert_index(test_dataset, stop_words=stopwords, stemming=stemming,
+                                                       max_ngram=max_ngram, cache_path=test_cache_path)
 
     return train_dataset, valid_dataset, test_dataset
 

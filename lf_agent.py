@@ -91,8 +91,6 @@ class ChatGPTLFAgent:
             self.neighbors = np.argsort(- self.similarity_matrix, axis=-1)
 
         self.return_explanation = kwargs.get("return_explanation", False)
-        self.play_expert_role = kwargs.get("play_expert_role", False)
-        self.dp_aware = kwargs.get("dp_aware", False)
         self.n_completion = kwargs.get("n_completion")
         self.temperature = kwargs.get("temperature")
         self.top_p = kwargs.get("top_p")
@@ -199,7 +197,7 @@ class ChatGPTLFAgent:
                     # label, keywords = extract_label_keywords(response_content, self.train_dataset.n_class)
                     if label in range(self.train_dataset.n_class):
                         output_labels.append(label)
-                    if isinstance(keyword_list, list):
+                    if isinstance(keywords, list):
                         keyword_list += keywords
 
                 if len(output_labels) > 0:
@@ -329,7 +327,7 @@ class SimLFAgent:
             filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
 
         if len(filtered_lfs) == 0:
-            filtered_lfs = [KeywordLF("NA", label)]
+            filtered_lfs = [KeywordLF("none", label)]
         else:
             for lf in filtered_lfs:
                 self.lfs.append(lf)

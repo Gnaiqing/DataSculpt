@@ -210,7 +210,7 @@ class MLP(Classifier):
         self.n_class = n_class
         if params is None:
             params = {
-                'max_iter': [1000],
+                'max_iter': [200],
                 'learning_rate_init': [0.0003, 0.001, 0.003, 0.01],
                 'alpha': [0.0001, 0.0003, 0.01]
             }

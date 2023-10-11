@@ -5,6 +5,40 @@ from wrench.labelmodel import MeTaL, MajorityVoting, Snorkel
 optuna.logging.disable_default_handler()
 
 
+def get_wrench_label_model(method, **kwargs):
+    if method == "Snorkel":
+        return Snorkel(**kwargs)
+    elif method == "MeTaL":
+        return MeTaL(**kwargs)
+    elif method == "MV":
+        return MajorityVoting(**kwargs)
+
+
+def is_valid_snorkel_input(lfs):
+    lf_labels = [lf.label for lf in lfs]
+    return len(lfs) > 3 and np.min(lf_labels) != np.max(lf_labels)
+
+# def get_search_space(method):
+#     if method in search_space:
+#         return search_space[method]
+#     else:
+#         return None
+
+
+# search_space = {
+#     'Snorkel': {
+#         'lr': np.logspace(-4, -1, num=4, base=10),
+#         'l2': np.logspace(-4, -1, num=4, base=10),
+#         'n_epochs': [5, 10, 50, 100],
+#     },
+#     "MeTaL": {
+#         'lr': np.logspace(-4, -1, num=4, base=10),
+#         'l2': np.logspace(-4, -1, num=4, base=10),
+#         'n_epochs': [5, 10, 50, 100],
+#     }
+# }
+
+
 # def get_label_model(method, cardinality=2, **kwargs):
 #     if method == "mv":
 #         return MajorityLabelVoter(cardinality=cardinality)
@@ -20,37 +54,6 @@ optuna.logging.disable_default_handler()
 #             'n_trials': 512
 #         }
 #         return Snorkel(**snorkel_kwargs, **kwargs)
-
-
-def get_wrench_label_model(method, **kwargs):
-    if method == "Snorkel":
-        return Snorkel(**kwargs)
-    elif method == "MeTaL":
-        return MeTaL(**kwargs)
-    elif method == "MV":
-        return MajorityVoting(**kwargs)
-
-
-def get_search_space(method):
-    if method in search_space:
-        return search_space[method]
-    else:
-        return None
-
-
-search_space = {
-    'Snorkel': {
-        'lr': np.logspace(-4, -1, num=4, base=10),
-        'l2': np.logspace(-4, -1, num=4, base=10),
-        'n_epochs': [5, 10, 50, 100],
-    },
-    "MeTaL": {
-        'lr': np.logspace(-4, -1, num=4, base=10),
-        'l2': np.logspace(-4, -1, num=4, base=10),
-        'n_epochs': [5, 10, 50, 100],
-    }
-}
-
 
 # class Snorkel:
 #     def __init__(self, seed=None, calibration="isotonic", threshold_selection="auto", **kwargs):

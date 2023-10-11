@@ -193,6 +193,13 @@ def create_cot_prompt(dataset_name, dataset, example_per_class=1, **kwargs):
         task = "topic classification"
         task_info = "In each iteration, the user will provide a medical abstract and a label indicating the topic of the abstract based on the disease it focuses on."
         class_info = "0 for neoplasms diseases, 1 for digestive system diseases, 2 for nervous system diseases, 3 for cardiovascular diseases, 4 for general pathological conditions."
+    elif dataset_name == "arxiv_abstract":
+        task = "topic classification"
+        task_info = "In each iteration, the user will provide a paper abstract and a label indicating the topic of the abstract. "
+        class_info = "0 for Computer Vision and Pattern Recognition, covering image processing, computer vision, pattern recognition, and scene understanding." \
+                     "1 for Machine Learning, covering Papers on all aspects of machine learning research (supervised, unsupervised, reinforcement learning, bandit problems," \
+                     "and so on) including also robustness, explanation, fairness, and methodology. Also for machine learning paper with a statistical or theoretical grounding."
+
 
     if "lf_type" in kwargs:
         lf_type = kwargs["lf_type"]
@@ -380,6 +387,12 @@ def create_prompt(dataset_name, dataset, example_per_class=1, example_selection=
                      "6 for a member A forms a nonfunctional part of a collection B. " \
                      "7 for a message A, written or spoken, is about a topic B. " \
                      "8 for a producer B causes a product A to exist. "
+    elif dataset_name == "arxiv_abstract":
+        task = "topic classification"
+        task_info = "In each iteration, the user will provide a paper abstract. Please classify the topic of the abstract into following categories. "
+        class_info = "0 for Computer Vision and Pattern Recognition, covering image processing, computer vision, pattern recognition, and scene understanding." \
+                     "1 for Machine Learning, covering Papers on all aspects of machine learning research (supervised, unsupervised, reinforcement learning, bandit problems," \
+                     "and so on) including also robustness, explanation, fairness, and methodology. Also for machine learning paper with a statistical or theoretical grounding."
 
     if "lf_type" in kwargs:
         lf_type = kwargs["lf_type"]
