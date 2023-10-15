@@ -11,7 +11,7 @@ def get_sampler(train_dataset, sampler_type, **kwargs):
     if sampler_type in ["passive", "uncertain", "QBC"]:
         return ActiveSampler(train_dataset, al_method=sampler_type, **kwargs)
     elif sampler_type == "SEU":
-        return SEUSampler(train_dataset)
+        return SEUSampler(train_dataset, **kwargs)
     elif sampler_type == "weighted":
         return WeightedScoreSampler(train_dataset, **kwargs)
     else:
@@ -40,8 +40,8 @@ class ActiveSampler(Sampler):
         self.label_index = self.alibox.IndexCollection([0]).difference_update([0])
         self.unlabel_index = self.alibox.IndexCollection(np.arange(len(dataset)))
 
-    def sample(self, batch_size=1, lm_probs=None, al_model=None):
-        if al_model is None or self.al_method == "passive":
+    def sample(self, batch_size=1, label_model=None, end_model=None):
+        if end_model is None or self.al_method == "passive":
             strategy = self.alibox.get_query_strategy(strategy_name="QueryInstanceRandom")
         elif self.al_method == "uncertain":
             strategy = self.alibox.get_query_strategy(strategy_name="QueryInstanceUncertainty")
@@ -52,7 +52,7 @@ class ActiveSampler(Sampler):
 
         indices = strategy.select(label_index=self.label_index,
                                   unlabel_index=self.unlabel_index,
-                                  model=al_model,
+                                  model=end_model,
                                   batch_size=batch_size)
 
         self.label_index.update(indices)
@@ -81,11 +81,12 @@ class SEUSampler(Sampler):
         self.label_index = np.array([], dtype=int)
         self.unlabel_index = np.arange(len(dataset), dtype=int)
 
-    def sample(self, batch_size=1, lm_probs=None):
-        if lm_probs is None:
+    def sample(self, batch_size=1, label_model=None, end_model=None):
+        if label_model is None:
             sampled_index = np.random.choice(self.unlabel_index, size=batch_size, replace=False)
         else:
-            y_preds = np.argmax(lm_probs, axis=1)
+            lm_probs = label_model.predict_proba(np.array(self.dataset.weak_labels))
+            y_preds = label_model.predict(np.array(self.dataset.weak_labels), tie_break_policy="random")
             lf_accs = np.zeros((len(self.revert_index), self.n_class), dtype=float)
             # estimate LF accuracy
             for (keyword_index, keyword) in enumerate(self.revert_index):
@@ -127,7 +128,7 @@ class SEUSampler(Sampler):
 
 class WeightedScoreSampler(Sampler):
     def __init__(self, dataset, embedding_model="all-MiniLM-L12-v2", distance="cosine",
-                 uncertain_metric="entropy", k=100, alpha=0.5, beta=0.0, **kwargs):
+                 uncertain_metric="entropy", k=100, alpha=1.0, beta=1.0, gamma=1.0, **kwargs):
         super(WeightedScoreSampler, self).__init__(dataset)
         self.embedding_model = SentenceTransformer(embedding_model)
         sentences = [dataset.examples[i]["text"] for i in range(len(dataset))]
@@ -138,51 +139,69 @@ class WeightedScoreSampler(Sampler):
             raise ValueError("Similarity function not supported.")
 
         self.dist_mat = 1 - self.sim_func(self.embeddings, self.embeddings).numpy()
-        self.n = len(self.dataset)
         self.k = k  # neighbor count
-        self.alpha = alpha  # trade-off factor for uncertain score and distance
-        self.beta = beta  # decay factor for distance metric
+        self.alpha = alpha  # weight factor for uncertain score
+        self.beta = beta  # weight factor for class balance
+        self.gamma = gamma  # weight factor for distance to labeled set
         self.uncertain_metric = uncertain_metric
-        # compute k-nearest neighbors for each point
-        self.neighbors = np.argsort(self.dist_mat, axis=1)[:,1:k+1]
-        self.neighbor_dists = np.sort(self.dist_mat, axis=1)[:,1:k+1]
+        # compute k-nearest neighbors for each point (including itself)
+        self.neighbors = np.argsort(self.dist_mat, axis=1)[:,:k]
+        # self.neighbor_dists = np.sort(self.dist_mat, axis=1)[:,:k]
         self.label_index = np.array([], dtype=int)
         self.unlabel_index = np.arange(len(dataset), dtype=int)
+        self.kwargs = kwargs
 
     def distance_to_labeled(self, indices):
         if len(self.label_index) == 0:
-            return np.repeat(100, len(indices))
+            return np.ones(len(indices))
         distance = self.dist_mat[np.ix_(indices, self.label_index)]
         sorted_distance = np.sort(distance, axis=1)
-        dist = sorted_distance[:,0]
-        dist[dist < 0.0] = 0.0  # avoid some float computation issue
+        dist = sorted_distance[:, 0]
+        dist[dist < 0.0] = 0.0  # avoid computation issue
         return dist
 
-    def sample(self, batch_size=1, lm_probs=None):
-        if lm_probs is None:
-            uncertain_score = np.ones(self.n)
-        else:
-            if self.uncertain_metric == "entropy":
-                uncertain_score = entropy(lm_probs, axis=1)
-            elif self.uncertain_metric == "confidence":
-                uncertain_score = 1 - np.max(lm_probs, axis=1)
-            elif self.uncertain_metric == "margin":
-                sorted_probs = np.sort(lm_probs, axis=1)
-                uncertain_score = 1 - (sorted_probs[:,-1] - sorted_probs[:,-2])
-            else:
-                raise ValueError("Uncertainty score not supported.")
-            # # normalize the uncertain score to [0,1]
-            # min_score = np.min(uncertain_score)
-            # max_score = np.max(uncertain_score)
-            # if min_score != max_score:
-            #     uncertain_score = (uncertain_score - min_score) / (max_score - min_score)
-            # # transform uncertain score to be positive
-            # uncertain_score = np.exp(uncertain_score)
+    def update(self, weak_labels):
+        self.dataset.weak_labels = weak_labels
 
-        weights = np.power(self.distance_to_labeled(np.arange(self.n)), self.alpha) * \
-                  np.power(uncertain_score, 1-self.alpha)
+    def sample(self, batch_size=1, label_model=None, end_model=None):
+        if label_model is None and end_model is None:
+            probs = np.ones((len(self.dataset), self.dataset.n_class)) / self.dataset.n_class
+        elif end_model is None:
+            probs = label_model.predict_proba(np.array(self.dataset.weak_labels))
+        else:
+            probs = end_model.predict_proba(self.dataset.features)
+
+        if self.uncertain_metric == "entropy":
+            uncertain_score = entropy(probs, axis=1)
+        elif self.uncertain_metric == "confidence":
+            uncertain_score = 1 - np.max(probs, axis=1)
+        elif self.uncertain_metric == "margin":
+            sorted_probs = np.sort(probs, axis=1)
+            uncertain_score = 1 - (sorted_probs[:,-1] - sorted_probs[:,-2])
+        else:
+            raise ValueError("Uncertainty score not supported.")
+
+        if "class_balance" in self.kwargs and label_model is not None:
+            desired_class_balance = self.kwargs["class_balance"]
+            cur_preds = label_model.predict(np.array(self.dataset.weak_labels))
+            pred_count = np.bincount(cur_preds, minlength=self.dataset.n_class)
+            pred_class_balance = pred_count / len(self.dataset)
+            class_ratio = desired_class_balance / (pred_class_balance+1e-6)
+            class_ratio = class_ratio / np.sum(class_ratio)
+            if end_model is not None:
+                probs = end_model.predict_proba(self.dataset.features)
+            else:
+                probs = label_model.predict_proba(np.array(self.dataset.weak_labels))
+
+            class_score = np.sum(probs * class_ratio, axis=1)
+        else:
+            class_score = np.ones(len(self.dataset))
+
+        distance_score = self.distance_to_labeled(np.arange(len(self.dataset)))
+
+        weights = uncertain_score * self.alpha + class_score * self.beta + distance_score * self.gamma
         neighbor_weights = weights[self.neighbors]
-        scores = np.sum(neighbor_weights * np.exp(- self.neighbor_dists * self.beta), axis=1)
+        scores = np.sum(neighbor_weights, axis=1)
         unlabel_scores = scores[self.unlabel_index]
         unlabel_pos = np.argsort(unlabel_scores)[-1:-batch_size-1:-1]
         sampled_index = self.unlabel_index[unlabel_pos]

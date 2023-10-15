@@ -3,7 +3,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import os
 from numpy.random import default_rng
-from lf_family import KeywordLF, RegexLF
+from lf_family import KeywordLF, RegexLF, create_label_matrix
 import openai
 from gpt_utils import create_prompt, create_cot_prompt, create_cot_user_prompt, create_user_prompt, extract_response, build_example
 from sentence_transformers import SentenceTransformer
@@ -21,8 +21,26 @@ def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
         raise ValueError("LF agent not supported.")
 
 
+def calculate_overlap(L_train, wl):
+    if L_train is None:
+        return 0.0
+
+    # calculate the maximum fraction of overlap that weak labels have with L_train
+    n_lf = L_train.shape[1]
+    wl = wl.flatten()
+    max_overlap = 0.0
+    for i in range(n_lf):
+        active_indices = (L_train[:,i].flatten() != -1) | (wl != -1)
+        overlap_indices = (L_train[:,i].flatten() != -1) & (L_train[:,i].flatten() == wl)
+        overlap = np.sum(overlap_indices) / np.sum(active_indices)
+        if overlap > max_overlap:
+            max_overlap = overlap
+
+    return max_overlap
+
+
 def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
-                         valid_dataset, acc_threshold, prev_lfs):
+                         valid_dataset, acc_threshold, overlap_threshold, L_train):
     """
     Filter a subset of candidate lfs that can be added given previous LFs
 
@@ -30,35 +48,39 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
     :param filter_methods: methods for filtering
     :param valid_dataset: validation dataset for estimating LF accuracy
     :param acc_threshold: accuracy threshold for accuracy filter
-    :param sentiment_lexicon: sentiment lexicons for sentiment filter
-    :param prev_lfs: LFs designed in previous iterations for redundance filter
+    :param overlap_threshold: overlap threshold for redundancy filter
+    :param L_train: weak labels for previous LFs
     :return: filtered_lfs: a subset of candidate LFs
     """
-    mask = np.repeat(True, len(candidate_lfs))
+    if len(candidate_lfs) == 0:
+        return []
+    L_append = create_label_matrix(train_dataset, candidate_lfs)
+    filtered_lfs = []
 
     for j, lf in enumerate(candidate_lfs):
-        train_cov, _ = lf.get_cov_acc(train_dataset)
+        train_cov = np.mean(L_append[:,j] != -1)
         if train_cov == 0:
-            mask[j] = False
+            # remove LFs with no coverage
+            continue
 
-    if "acc" in filter_methods:
-        for j, lf in enumerate(candidate_lfs):
-            if not mask[j]:
-                continue
+        if "acc" in filter_methods:
+            # remove LFs with accuracy below threshold
             cov, acc = lf.get_cov_acc(valid_dataset)
             if cov > 0 and acc < acc_threshold:
-                mask[j] = False
-
-    if "unique" in filter_methods:
-        for j, lf in enumerate(candidate_lfs):
-            if not mask[j]:
                 continue
-            for prev_lf in prev_lfs:
-                if lf == prev_lf:
-                    mask[j] = False
-                    break
 
-    filtered_lfs = np.array(candidate_lfs)[mask]
+        if "overlap" in filter_methods:
+            # remove LFs with weak labels close to previous LFs
+            lf_overlap = calculate_overlap(L_train, L_append[:,j])
+            if lf_overlap >= overlap_threshold:
+                continue
+
+        filtered_lfs.append(lf)
+        if L_train is None:
+            L_train = L_append[:,j].reshape(-1,1)
+        else:
+            L_train = np.hstack((L_train, L_append[:,j].reshape(-1,1)))
+
     return filtered_lfs
 
 
@@ -98,7 +120,9 @@ class ChatGPTLFAgent:
         self.lf_type = kwargs.get("lf_type", "keyword")
         self.filter_methods = kwargs.get("filter_methods", ("acc", "unique"))
         self.lfs = list()  # history LFs
+        self.L_train = None  # train weak labels
         self.acc_threshold = kwargs.get("acc_threshold", 0.6)
+        self.overlap_threshold = kwargs.get("overlap_threshold", 0.95)
         self.stop_words = kwargs.get("stop_words")
         self.stemming = kwargs.get("stemming")
         self.max_ngram = kwargs.get("max_ngram", 1)
@@ -194,7 +218,7 @@ class ChatGPTLFAgent:
                     response_dict = extract_response(response_content)
                     label = response_dict["label"]
                     keywords = response_dict["keyword_list"]
-                    # label, keywords = extract_label_keywords(response_content, self.train_dataset.n_class)
+
                     if label in range(self.train_dataset.n_class):
                         output_labels.append(label)
                     if isinstance(keywords, list):
@@ -239,7 +263,7 @@ class ChatGPTLFAgent:
                     response_dict = extract_response(response_content)
                     label = response_dict["label"]
                     regexs = response_dict["regex_list"]
-                    # label, regexs = extract_label_regex(response_content, self.train_dataset.n_class)
+
                     if label in range(self.train_dataset.n_class):
                         output_labels.append(label)
                     if isinstance(regexs, list):
@@ -264,7 +288,7 @@ class ChatGPTLFAgent:
             raise NotImplementedError("LF Type not supported.")
 
         filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset,
-                                            self.valid_dataset, self.acc_threshold, self.lfs)
+                                            self.valid_dataset, self.acc_threshold, self.overlap_threshold, self.L_train)
 
         if self.max_lf_per_iter is not None and self.max_lf_per_iter < len(filtered_lfs):
             filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
@@ -275,6 +299,12 @@ class ChatGPTLFAgent:
             else:
                 filtered_lfs = [RegexLF("none", label)]
         else:
+            weak_labels = create_label_matrix(self.train_dataset, filtered_lfs)
+            if self.L_train is None:
+                self.L_train = weak_labels
+            else:
+                self.L_train = np.hstack((self.L_train, weak_labels))
+
             for lf in filtered_lfs:
                 self.lfs.append(lf)
 

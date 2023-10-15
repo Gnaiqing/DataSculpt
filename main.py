@@ -30,7 +30,6 @@ def main(args):
     print_dataset_stats(valid_dataset, split="valid")
     print_dataset_stats(test_dataset, split="test")
 
-
     if args.save_wandb:
         group_id = wandb.util.generate_id()
         config_dict = vars(args)
@@ -105,6 +104,8 @@ def main(args):
             continue
 
         seed = rng.choice(10000)
+        values, counts = np.unique(valid_dataset.labels, return_counts=True)
+        class_balance = counts / len(valid_dataset)
         sampler = get_sampler(train_dataset=train_dataset,
                               sampler_type=args.sampler,
                               embedding_model=args.embedding_model,
@@ -113,6 +114,8 @@ def main(args):
                               k=args.neighbor_num,
                               alpha=args.alpha,
                               beta=args.beta,
+                              gamma=args.gamma,
+                              class_balance=class_balance,
                               seed=seed
                               )
 
@@ -132,6 +135,7 @@ def main(args):
                                 lf_type=args.lf_type,
                                 filter_methods=args.lf_filter,
                                 acc_threshold=args.lf_acc_threshold,
+                                overlap_threshold=args.lf_overlap_threshold,
                                 seed=seed,
                                 stop_words=args.stop_words,
                                 stemming=args.stemming,
@@ -140,7 +144,6 @@ def main(args):
                                 )
         label_model = None
         disc_model = None
-        lm_probs = None  # label model's output on train data
         L_train = None
         L_val = None
         best_valid_perf = 0.0
@@ -152,7 +155,7 @@ def main(args):
         start = 0  # the number of LFs applied in previous iteration
 
         for t in range(args.num_query):
-            query_idx = sampler.sample(lm_probs=lm_probs)[0]
+            query_idx = sampler.sample(label_model=label_model, end_model=disc_model)[0]
             if args.display:
                 query = create_user_prompt("", args.dataset_name, train_dataset, query_idx)
                 print("\nQuery [{}]: {}".format(query_idx, query))
@@ -233,7 +236,6 @@ def main(args):
                 lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels), n_class=train_dataset.n_class)
                 gt_valid_labels = np.array(valid_dataset.labels)
                 lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels), n_class=valid_dataset.n_class)
-
 
                 if args.tune_metric == "f1":
                     metric = "f1_binary" if train_dataset.n_class == 2 else "f1_macro"
@@ -343,8 +345,6 @@ def main(args):
                     print("Test prediction stats (end model output):")
                     pprint.pprint(test_stats)
 
-
-
         if args.save_wandb:
             wandb.run.summary["num_query"] = t+1
             wandb.run.summary["lf_num"] = len(lfs)
@@ -387,16 +387,15 @@ if __name__ == '__main__':
     parser.add_argument("--stemming", type=str, default="porter")
     parser.add_argument("--append-cdr", action="store_true", help="append cdr snippets to original dataset")
     # sampler
-    parser.add_argument("--sampler", type=str, default="passive", choices=["passive","uncertain", "QBC", "SEU", "weighted"],
+    parser.add_argument("--sampler", type=str, default="passive", choices=["passive", "uncertain", "QBC", "SEU", "weighted"],
                         help="sample selector")
     parser.add_argument("--embedding-model", type=str, default="all-MiniLM-L12-v2")
     parser.add_argument("--distance", type=str, default="cosine")
     parser.add_argument("--uncertain-metric", type=str, default="entropy")
-    parser.add_argument("--neighbor-num", type=int, default=100, help="neighbor count in KNN")
-    parser.add_argument("--alpha", type=float, default=0.5, help="trade-off between distance and uncertainty in [0,1], "
-                                                                 "higher value weights distance more.")
-    parser.add_argument("--beta", type=float, default=0.0, help="decay factor for distance-based voting in [0,inf). "
-                                                                "higher value weights close neighbors more.")
+    parser.add_argument("--neighbor-num", type=int, default=10, help="neighbor count in KNN")
+    parser.add_argument("--alpha", type=float, default=1.0, help="trade-off factor for uncertainty. ")
+    parser.add_argument("--beta", type=float, default=1.0, help="trade-off factor for class balance. ")
+    parser.add_argument("--gamma", type=float, default=1.0, help="trade-off factor for distance to labeled set.")
     # data programming
     parser.add_argument("--label-model", type=str, default="Snorkel", choices=["Snorkel", "MeTaL", "MV"], help="label model used in DP paradigm")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
@@ -408,8 +407,9 @@ if __name__ == '__main__':
     # label function
     parser.add_argument("--lf-agent", type=str, default="chatgpt", choices=["chatgpt", "llama-2", "wrench"], help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", choices=["keyword", "regex"], help="LF family")
-    parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "unique"], help="filters for LF verification")
+    parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "overlap"], help="filters for LF verification")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.6, help="LF accuracy threshold for verification")
+    parser.add_argument("--lf-overlap-threshold", type=float, default=0.95, help="LF overlap threshold for verification")
     parser.add_argument("--max-lf-per-iter", type=int, default=100, help="Maximum LF num per interaction")
     parser.add_argument("--max-ngram", type=int, default=3, help="N-gram in keyword LF")
     # prompting method
