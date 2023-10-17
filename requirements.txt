@@ -1,0 +1,12 @@
+pytokenizations
+transformers[sentencepiece]
+datasets
+torch
+torchvision
+torchaudio
+snorkel
+optuna
+wandb
+alipy
+sentence-transformers
+openai
