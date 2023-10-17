@@ -88,76 +88,6 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
 
 
 
-
-class ChatGPTLFAgent:
-    def __init__(self, train_dataset, valid_dataset, **kwargs):
-        """
-        LF Agent using ChatGPT
-        :param train_dataset: training dataset to label
-        :param valid_dataset: validation dataset
-        :param kwargs: arguments
-        """
-        self.train_dataset = train_dataset
-        self.valid_dataset = valid_dataset
-        self.kwargs = kwargs
-        # API related arguments
-        self.model = kwargs.get("model", "gpt-3.5-turbo")
-        openai.api_key_path = kwargs.get("api_key_path", "openai-api.key")
-        self.repeats = kwargs.get("repeats", 1)
-        self.example_per_class = kwargs.get("example_per_class", 1)
-        self.example_selection = kwargs.get("example_selection", "random")
-        if self.example_selection == "neighbor":
-            # compute the cosine similarity between training instances (unlabeled) and validation instances (labeled)
-            embedding_model = kwargs.get("embedding_model", "all-MiniLM-L12-v2")
-            self.embedding_model = SentenceTransformer(embedding_model)
-            train_sentences = [self.train_dataset.examples[i]["text"] for i in range(len(self.train_dataset))]
-            valid_sentences = [self.valid_dataset.examples[i]["text"] for i in range(len(self.valid_dataset))]
-            train_embedding = self.embedding_model.encode(train_sentences)
-            valid_embedding = self.embedding_model.encode(valid_sentences)
-            self.similarity_matrix = cosine_similarity(train_embedding, valid_embedding)
-            self.neighbors = np.argsort(- self.similarity_matrix, axis=-1)
-
-        self.return_explanation = kwargs.get("return_explanation", False)
-        self.n_completion = kwargs.get("n_completion")
-        self.temperature = kwargs.get("temperature")
-        self.top_p = kwargs.get("top_p")
-        # Label function related arguments
-        self.lf_type = kwargs.get("lf_type", "keyword")
-        self.filter_methods = kwargs.get("filter_methods", ("acc", "unique"))
-        self.lfs = list()  # history LFs
-        self.L_train = None  # train weak labels
-        self.acc_threshold = kwargs.get("acc_threshold", 0.6)
-        self.overlap_threshold = kwargs.get("overlap_threshold", 0.95)
-        self.stop_words = kwargs.get("stop_words")
-        self.stemming = kwargs.get("stemming")
-        self.max_ngram = kwargs.get("max_ngram", 1)
-        self.max_lf_per_iter = kwargs.get("max_lf_per_iter", 1)
-        # other arguments
-        self.display = kwargs.get("display", True)
-        self.seed = kwargs.get("seed", 0)
-        self.rng = default_rng(self.seed)
-        self.system_prompt, self.example_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
-                                                                example_per_class=self.example_per_class,
-                                                                example_selection=self.example_selection,
-                                                                explanation=self.return_explanation,
-                                                                lf_type=self.lf_type)
-        self.cot_system_prompt, self.cot_example_prompt = create_cot_prompt(self.kwargs["dataset_name"], self.valid_dataset,
-                                                                            example_per_class=self.example_per_class,
-                                                                            example_selection=self.example_selection,
-                                                                            explanation=self.return_explanation,
-                                                                            lf_type=self.lf_type)
-        if self.display:
-            print("ChatGPT system prompt:")
-            print(self.system_prompt)
-            print("Example prompt:")
-            print(self.example_prompt)
-
-    def create_lf(self, query_idx):
-        if self.example_selection == "neighbor":
-            # select the examples that are closest to the test instance
-            n_examples = self.example_per_class * self.train_dataset.n_class
-            cur_examples = 0
-            k = 0
 class LLama2LFAgent:
     def __init__(self, train_dataset, valid_dataset, **kwargs):
         """
@@ -252,8 +182,8 @@ class LLama2LFAgent:
                                 top_p=self.top_p,
                                 temperature=self.temperature,
                             )
-                    response_content.append(response['choices'][0]["message"]["content"])
-                    response_content = "\n".join(response_content)
+                        response_content.append(response['choices'][0]["message"]["content"])
+                    response_content = response_content[0]
                 except openai.error.OpenAIError:
                     response_content = ""
 
@@ -282,9 +212,9 @@ class LLama2LFAgent:
             label, keyword_list = None, []
             for i in range(self.repeats):  # try multiple times if first attempt fails
                 try:
-                    response_content = []
+                    response = []
                     for _ in self.n_completion:
-                        response = openai.ChatCompletion.create(
+                        cur_response = openai.ChatCompletion.create(
                                 api_base = "https://api.endpoints.anyscale.com/v1",
                                 api_key=self.api_key,
                                 model=self.model,
@@ -292,14 +222,13 @@ class LLama2LFAgent:
                                 top_p=self.top_p,
                                 temperature=self.temperature,
                             )
-                    response_content.append(response['choices'][0]["message"]["content"])
-                    response_content = "\n".join(response_content)
+                        response.append(cur_response['choices'][0]["message"]["content"])
                 except openai.error.OpenAIError:
                     continue
 
                 output_labels = []
                 for j in range(self.n_completion):
-                    response_content = response['choices'][j]["message"]["content"]
+                    response_content = response[j]
                     if self.display:
                         print("Response {}: {}\n".format(j, response_content))
 
@@ -333,9 +262,9 @@ class LLama2LFAgent:
             label, regex_list = None, []
             for i in range(self.repeats):  # try multiple times if first attempt fails
                 try:
-                    response_content = []
+                    response = []
                     for _ in self.n_completion:
-                        response = openai.ChatCompletion.create(
+                        cur_response = openai.ChatCompletion.create(
                                 api_base = "https://api.endpoints.anyscale.com/v1",
                                 api_key=self.api_key,
                                 model=self.model,
@@ -343,14 +272,13 @@ class LLama2LFAgent:
                                 top_p=self.top_p,
                                 temperature=self.temperature,
                             )
-                    response_content.append(response['choices'][0]["message"]["content"])
-                    response_content = "\n".join(response_content)
+                        response.append(cur_response['choices'][0]["message"]["content"])
                 except openai.error.OpenAIError:
                     continue
 
                 output_labels = []
                 for j in range(self.n_completion):
-                    response_content = response['choices'][j]["message"]["content"]
+                    response_content = response[j]
                     if self.display:
                         print("Response {}: {}\n".format(j, response_content))
                     response_dict = extract_response(response_content)
