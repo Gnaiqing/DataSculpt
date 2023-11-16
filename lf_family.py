@@ -103,9 +103,12 @@ class RegexLF(AbstractLF):
         if "{{B}}" in regex and "entity2" in kwargs:
             regex = re.sub("\{\{B\}\}", re.escape(kwargs["entity2"]), regex)
 
-        if re.search(regex, x, flags=re.I):
-            return self.label
-        else:
+        try:
+            if re.search(regex, x, flags=re.I):
+                return self.label
+            else:
+                return -1
+        except re.error:
             return -1
 
     def apply_to_dataset(self, dataset):

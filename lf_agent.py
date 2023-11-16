@@ -7,9 +7,16 @@ from lf_family import KeywordLF, RegexLF, create_label_matrix
 import openai
 from gpt_utils import create_prompt, create_cot_prompt, create_cot_user_prompt, create_user_prompt, extract_response, build_example
 from sentence_transformers import SentenceTransformer
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+)  # for exponential backoff
+
 from data_utils import preprocess_text
 import nltk
 import re
+import time
 
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
@@ -84,6 +91,14 @@ def filter_candidate_lfs(candidate_lfs, filter_methods, train_dataset,
     return filtered_lfs
 
 
+@retry(wait=wait_random_exponential(min=10, max=60), stop=stop_after_attempt(6))
+def completion_with_backoff(sleep_time=0, **kwargs):
+    if sleep_time > 0:
+        time.sleep(sleep_time)
+
+    return openai.ChatCompletion.create(**kwargs)
+
+
 class ChatGPTLFAgent:
     def __init__(self, train_dataset, valid_dataset, **kwargs):
         """
@@ -98,7 +113,6 @@ class ChatGPTLFAgent:
         # API related arguments
         self.model = kwargs.get("model", "gpt-3.5-turbo")
         openai.api_key_path = kwargs.get("api_key_path", "openai-api.key")
-        self.repeats = kwargs.get("repeats", 1)
         self.example_per_class = kwargs.get("example_per_class", 1)
         self.example_selection = kwargs.get("example_selection", "random")
         if self.example_selection == "neighbor":
@@ -130,6 +144,7 @@ class ChatGPTLFAgent:
         # other arguments
         self.display = kwargs.get("display", True)
         self.seed = kwargs.get("seed", 0)
+        self.sleep_time = kwargs.get("sleep_time",0)
         self.rng = default_rng(self.seed)
         self.system_prompt, self.example_prompt = create_prompt(self.kwargs["dataset_name"], self.valid_dataset,
                                                                 example_per_class=self.example_per_class,
@@ -162,17 +177,17 @@ class ChatGPTLFAgent:
                     {"role": "system", "content": self.cot_system_prompt},
                     {"role": "user", "content": cot_user_prompt}
                 ]
-                try:
-                    response = openai.ChatCompletion.create(
-                        model=self.model,
-                        messages=messages,
-                        top_p=self.top_p,
-                        temperature=self.temperature,
-                        n=self.n_completion
-                    )
-                    response_content = response['choices'][0]["message"]["content"]
-                except openai.error.OpenAIError:
-                    response_content = ""
+
+                response = completion_with_backoff(
+                    sleep_time=self.sleep_time,
+                    model=self.model,
+                    messages=messages,
+                    top_p=self.top_p,
+                    temperature=self.temperature,
+                    n=self.n_completion
+                )
+
+                response_content = response['choices'][0]["message"]["content"]
 
                 response_dict = extract_response(response_content)
                 if self.lf_type == "keyword" and response_dict["keyword_list"] is not None and len(response_dict["keyword_list"]) > 0:
@@ -197,36 +212,33 @@ class ChatGPTLFAgent:
                 {"role": "user", "content": user_prompt}
             ]
             label, keyword_list = None, []
-            for i in range(self.repeats):  # try multiple times if first attempt fails
-                try:
-                    response = openai.ChatCompletion.create(
-                        model=self.model,
-                        messages=messages,
-                        top_p=self.top_p,
-                        temperature=self.temperature,
-                        n=self.n_completion
-                    )
-                except openai.error.OpenAIError:
-                    continue
 
-                output_labels = []
-                for j in range(self.n_completion):
-                    response_content = response['choices'][j]["message"]["content"]
-                    if self.display:
-                        print("Response {}: {}\n".format(j, response_content))
+            response = completion_with_backoff(
+                sleep_time=self.sleep_time,
+                model=self.model,
+                messages=messages,
+                top_p=self.top_p,
+                temperature=self.temperature,
+                n=self.n_completion
+            )
 
-                    response_dict = extract_response(response_content)
-                    label = response_dict["label"]
-                    keywords = response_dict["keyword_list"]
+            output_labels = []
+            for j in range(self.n_completion):
+                response_content = response['choices'][j]["message"]["content"]
+                if self.display:
+                    print("Response {}: {}\n".format(j, response_content))
 
-                    if label in range(self.train_dataset.n_class):
-                        output_labels.append(label)
-                    if isinstance(keywords, list):
-                        keyword_list += keywords
+                response_dict = extract_response(response_content)
+                label = response_dict["label"]
+                keywords = response_dict["keyword_list"]
 
-                if len(output_labels) > 0:
-                    label = np.bincount(output_labels).argmax()
-                    break
+                if label in range(self.train_dataset.n_class):
+                    output_labels.append(label)
+                if isinstance(keywords, list):
+                    keyword_list += keywords
+
+            if len(output_labels) > 0:
+                label = np.bincount(output_labels).argmax()
 
             keyword_list = np.unique(keyword_list)
             if label is not None:
@@ -243,35 +255,32 @@ class ChatGPTLFAgent:
                 {"role": "user", "content": user_prompt}
             ]
             label, regex_list = None, []
-            for i in range(self.repeats):  # try multiple times if first attempt fails
-                try:
-                    response = openai.ChatCompletion.create(
-                        model=self.model,
-                        messages=messages,
-                        top_p=self.top_p,
-                        temperature=self.temperature,
-                        n=self.n_completion
-                    )
-                except openai.error.OpenAIError:
-                    continue
 
-                output_labels = []
-                for j in range(self.n_completion):
-                    response_content = response['choices'][j]["message"]["content"]
-                    if self.display:
-                        print("Response {}: {}\n".format(j, response_content))
-                    response_dict = extract_response(response_content)
-                    label = response_dict["label"]
-                    regexs = response_dict["regex_list"]
+            response = completion_with_backoff(
+                sleep_time=self.sleep_time,
+                model=self.model,
+                messages=messages,
+                top_p=self.top_p,
+                temperature=self.temperature,
+                n=self.n_completion
+            )
 
-                    if label in range(self.train_dataset.n_class):
-                        output_labels.append(label)
-                    if isinstance(regexs, list):
-                        regex_list += regexs
+            output_labels = []
+            for j in range(self.n_completion):
+                response_content = response['choices'][j]["message"]["content"]
+                if self.display:
+                    print("Response {}: {}\n".format(j, response_content))
+                response_dict = extract_response(response_content)
+                label = response_dict["label"]
+                regexs = response_dict["regex_list"]
 
-                if len(output_labels) > 0:
-                    label = np.bincount(output_labels).argmax()
-                    break
+                if label in range(self.train_dataset.n_class):
+                    output_labels.append(label)
+                if isinstance(regexs, list):
+                    regex_list += regexs
+
+            if len(output_labels) > 0:
+                label = np.bincount(output_labels).argmax()
 
             regex_list = np.unique(regex_list)
             if label is not None:
