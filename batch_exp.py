@@ -8,9 +8,9 @@ multiclass_datasets = ("chemprot", "agnews", "trec", "medical_abstract")
 
 ### Modify the configurations below
 datasets = [
-    "youtube",
-    "sms",
-    "imdb",
+    # "youtube",
+    # "sms",
+    # "imdb",
     "yelp",
     "agnews",
     "trec",
@@ -36,7 +36,7 @@ filters = [
 ]
 
 acc = 0.6
-agent = "chatgpt"
+agent = "llama2"
 feature_extractor = "bert"
 evaluate_base_prompt = False  # base prompt
 evaluate_cot_prompt = False  # chain of thought
