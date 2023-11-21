@@ -2,7 +2,7 @@ import argparse
 from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
-from lf_family import create_label_matrix, RegexLF
+from lf_family import create_label_matrix
 from label_model import get_wrench_label_model, is_valid_snorkel_input
 from end_model import train_disc_model
 from wrench.search import grid_search
@@ -13,6 +13,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import wandb
 import pprint
+from pathlib import Path
 
 
 def main(args):
@@ -35,6 +36,9 @@ def main(args):
         config_dict = vars(args)
         config_dict["method"] = "LLMDP"
         config_dict["group_id"] = group_id
+
+    if args.dataset_name == "medical_abstract_unique":
+        args.dataset_name = "medical_abstract"
 
     rng = np.random.default_rng(args.seed)
     for run in range(args.runs):
@@ -116,7 +120,8 @@ def main(args):
                               beta=args.beta,
                               gamma=args.gamma,
                               class_balance=class_balance,
-                              seed=seed
+                              seed=seed,
+                              index_path=Path(args.dataset_path) / args.dataset_name / "train_index_unigram.json"
                               )
 
         lf_agent = get_lf_agent(train_dataset=train_dataset,
@@ -141,6 +146,7 @@ def main(args):
                                 stemming=args.stemming,
                                 max_ngram=args.max_ngram,
                                 max_lf_per_iter=args.max_lf_per_iter,
+                                sleep_time=args.sleep_time,
                                 )
         label_model = None
         disc_model = None
@@ -349,6 +355,8 @@ def main(args):
             wandb.run.summary["num_query"] = t+1
             wandb.run.summary["lf_num"] = len(lfs)
             wandb.run.summary["response_acc"] = response_acc
+            response_freq = np.mean(np.array(response_labels) != -1)
+            wandb.run.summary["response_freq"] = response_freq
 
             if len(lfs) > 0:
                 wandb.run.summary["lf_acc_avg"] = lf_train_stats["lf_acc_avg"]
@@ -423,6 +431,7 @@ if __name__ == '__main__':
     # experiment
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=10, help="evaluation interval")
+    parser.add_argument("--sleep-time", type=float, default=0, help="sleep time in seconds before each query")
     parser.add_argument("--early-stop", action="store_true")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)

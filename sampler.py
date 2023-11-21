@@ -5,6 +5,7 @@ from alipy import ToolBox
 from sentence_transformers import SentenceTransformer, util
 from scipy.stats import entropy
 from data_utils import build_revert_index
+from pathlib import Path
 
 
 def get_sampler(train_dataset, sampler_type, **kwargs):
@@ -66,10 +67,11 @@ class SEUSampler(Sampler):
     """
     def __init__(self, dataset, **kwargs):
         super(SEUSampler, self).__init__(dataset)
-        if hasattr(dataset, "revert_index"):
-            self.revert_index = dataset.revert_index
-        else:
-            self.revert_index = build_revert_index(dataset)
+        # if hasattr(dataset, "revert_index"):
+        #     self.revert_index = dataset.revert_index
+        # else:
+        #     self.revert_index = build_revert_index(dataset)
+        self.revert_index = build_revert_index(dataset, cache_path=kwargs["index_path"])
 
         self.active_keyword_index = [[] for _ in range(len(dataset))]
         for (keyword_index, keyword) in enumerate(self.revert_index):
@@ -90,23 +92,32 @@ class SEUSampler(Sampler):
             lf_accs = np.zeros((len(self.revert_index), self.n_class), dtype=float)
             # estimate LF accuracy
             for (keyword_index, keyword) in enumerate(self.revert_index):
-                for c in range(self.n_class):
-                    lf_acc = np.mean(y_preds[self.revert_index[keyword]] == c)
-                    lf_accs[keyword_index, c] = lf_acc
+                preds = y_preds[self.revert_index[keyword]]
+                pred_dist = np.bincount(preds, minlength=self.n_class) / len(preds)
+                lf_accs[keyword_index, :] = pred_dist
+
+                # for c in range(self.n_class):
+                #     lf_acc = np.mean(y_preds[self.revert_index[keyword]] == c)
+                #     lf_accs[keyword_index, c] = lf_acc
 
             # estimate LF utility
             lf_scores = np.zeros_like(lf_accs, dtype=float)
             uncertain_score = entropy(lm_probs, axis=1)
             for (keyword_index, keyword) in enumerate(self.revert_index):
+                active_indices = self.revert_index[keyword]
+                base_score = - np.sum(uncertain_score[active_indices])
                 for c in range(self.n_class):
-                    active_indices = self.revert_index[keyword]
                     pos_indices = active_indices[y_preds[active_indices] == c]
-                    neg_indices = active_indices[y_preds[active_indices] != c]
-                    lf_scores[keyword_index, c] = np.sum(uncertain_score[pos_indices]) - np.sum(uncertain_score[neg_indices])
+                    lf_scores[keyword_index, c] = 2 * np.sum(uncertain_score[pos_indices]) - base_score
 
-            # compute score per instance
+            # compute score per instance. Select a random subset for evaluation to speed up
+            if len(self.unlabel_index) > 3000:
+                candidate_index = np.random.choice(self.unlabel_index, size=3000, replace=False)
+            else:
+                candidate_index = self.unlabel_index
+
             unlabel_scores = []
-            for idx in self.unlabel_index:
+            for idx in candidate_index:
                 lf_acc_list = []
                 lf_score_list = []
                 for keyword_index in self.active_keyword_index[idx]:
@@ -119,7 +130,7 @@ class SEUSampler(Sampler):
                 unlabel_scores.append(score)
 
             unlabel_pos = np.argsort(unlabel_scores)[-1:-batch_size-1:-1]
-            sampled_index = self.unlabel_index[unlabel_pos]
+            sampled_index = candidate_index[unlabel_pos]
 
         self.label_index = np.union1d(self.label_index, sampled_index)
         self.unlabel_index = np.setdiff1d(self.unlabel_index, sampled_index)
@@ -198,7 +209,6 @@ class WeightedScoreSampler(Sampler):
             class_score = np.ones(len(self.dataset))
 
         distance_score = self.distance_to_labeled(np.arange(len(self.dataset)))
-
         weights = uncertain_score * self.alpha + class_score * self.beta + distance_score * self.gamma
         neighbor_weights = weights[self.neighbors]
         scores = np.sum(neighbor_weights, axis=1)
