@@ -8,16 +8,17 @@ The DataSculpt system is a framework for automatically developing label function
 to design label functions based on the query instances. It supports various LLMs for query, including GPT-3.5 and GPT-4 from OpenAI API
 , and Llama-2 models from AnyScale API. It also incorporates various prompting methods, sample selection methods and LF filtration techniques.
 
-<img src="figs/LLMDP-pipeline.png" alt="Overview" width="400"/>
+<img src="figs/DataSculpt-pipeline.png" alt="Overview"/>
 
 ## LF Space
 Our framework supports two types of label functions: keyword-based LFs and pattern-based LFs. The keyword-based LFs are mostly used for 
 text classification (e.g. sentiment analysis, topic classification) while the pattern-based LFs are mostly used for relation extraction (e.g. spouse, causal relation discovery).
 The figure below illustrates our prompt templates.
-![prompts](figs/prompt.png)
+![prompts](figs/prompt-cot-2.png)
 
 
 ## Installation
+The following command installs the required packages. The code has been tested on python 3.8.19.
 ```angular2html
 python -m venv .env
 source .env/bin/activate
@@ -26,12 +27,12 @@ pip install pytokenizations
 pip install transformers[sentencepiece]
 pip install datasets
 pip install torch torchvision torchaudio
-pip install snorkel
-pip install optuna
 pip install wandb
 pip install alipy
-pip install sentence-transformers
 pip install openai
+pip install nltk
+pip install tenacity
+pip install tensorboardX
 ```
 
 ## Usage

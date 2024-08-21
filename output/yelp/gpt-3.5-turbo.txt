@@ -1,0 +1,94 @@
+delici->1
+perfect->1
+dri->0
+superior->0
+tepid->0
+cool->1
+great->1
+nice->1
+bland->0
+slow->0
+fall apart->0
+filthi->0
+leak->0
+bewar->0
+profit->0
+question->0
+attitud->0
+mediocr->0
+shrug->0
+worst->0
+wrong->0
+assembl line->0
+aw->0
+mayonnais->0
+clean->1
+great servic->1
+reason price->1
+tasti->1
+relax->1
+studi->1
+disgust->0
+disappoint->0
+gross->0
+wateri->0
+safeti->0
+yell->0
+rude->0
+empti->0
+ghetto->0
+suck->0
+frozen hot chocol->0
+food poison->0
+fail->0
+horribl->0
+worth while->0
+conveni->1
+friendli->1
+littl problem->1
+blech->0
+eclect->1
+undercook->0
+best->1
+exceed expect->1
+luxuri->1
+big fan->1
+enjoy->1
+fast servic->1
+high review->0
+water down->0
+cheat->0
+lie->0
+warranti->0
+cool atmospher->1
+favorit->1
+great staff->1
+ador->1
+delect->1
+amaz->1
+gorgeou->1
+unprofession->0
+fun->1
+fantast->1
+embarrass->0
+mess up->0
+great experi->1
+incred->1
+delish->1
+event space->1
+love->1
+awesom->1
+happi->1
+ignor->0
+roach->0
+dissatisfi->0
+ordinari->0
+lousi->0
+overr->0
+small portion->0
+beauti->1
+stun->1
+surpris->1
+unexpect->0
+wait->0
+bad->0

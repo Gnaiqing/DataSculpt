@@ -1,0 +1,156 @@
+irish republican armi->0
+northern ireland->0
+deadlock->0
+peac process->0
+googl->3
+microsoft->3
+beta test->3
+search softwar->3
+clint dempsey->1
+gillett stadium->1
+pat noonan->1
+playoff game->1
+japanes navi->0
+german ambassador->0
+north korea->0
+border->0
+explos->0
+georg bush->0
+jesu vote->0
+state capitol->0
+crude oil->2
+barrel->2
+fell->2
+price->2
+tradit healer->3
+car bomb->0
+bounti mutin->0
+british territori->0
+pitcairn island->0
+sex abus trial->0
+cpm->2
+us elect->2
+diesel->2
+petrol->2
+ibm->3
+linux->3
+sco->3
+unix ip->3
+ziff davi->3
+iraq->0
+prime minist->0
+elect->0
+violenc->0
+microsoft corp->3
+scott mcneali->3
+sun microsystem inc->3
+woolworth->2
+africa commiss->0
+develop africa->0
+roic->2
+stock->2
+equatori guinea->0
+mark thatcher->0
+alleg involv->0
+attempt coup->0
+chip->3
+mobil devic->3
+treasuri price->2
+dollar->2
+euro->2
+inflat->2
+rate hike->2
+knick->1
+nazr moham->1
+block shot->1
+port citi->0
+terror->0
+yucatan peninsula->0
+conserv project->0
+tropic forest->0
+isra govern->0
+west bank settlement->0
+peac plan->0
+oil price->2
+crude->2
+isra gunfir->0
+jenin->0
+palestinian->0
+armi->0
+occupi territori->0
+kobe bryant->1
+lo angel media->1
+shaquil->1
+verbal bash->1
+auburn->1
+courtney taylor->1
+john vaughn->1
+southeastern confer->1
+polit fundrais->2
+hip->1
+unit airlin->2
+wall street journal->2
+bankruptci->2
+concess->2
+employe->2
+id terrorist->3
+comput system->3
+trial run->3
+at t corp->2
+internet telephon provid->2
+vonag->2
+price war->2
+massachusett attorney gener->2
+broker->2
+health insur industri->2
+exxon mobil->2
+consum->2
+hidden advertis app->3
+incompat->3
+daimlerchrysl ag->2
+assembl plant->2
+australian embassi->0
+deadli bomb->0
+manhunt->0
+milit->0
+suicid attack->0
+window oper system->2
+corpor contract->2
+revenu growth->2
+eu demand->3
+pc world->3
+softwar giant->3
+georg hw bush->0
+toni blair->0
+lake michigan->3
+motorola inc->3
+anthropolog->3
+industri design->3
+mechan engin->3
+mobil phone->3
+offic suit->3
+2 billion->2
+cost->2
+profit->2
+charl hayward->2
+execut->2
+barri bond->1
+basebal->1
+homer->1
+cincinnati->1
+miami dolphin->1
+travi minor->1
+ankl injuri->1
+game->1
+run back->1
+scana corp->2
+us power compani->2
+litig cost->2
+quarterli profit->2
+telecommun busi->2
+writedown->2
+fanni mae->2
+govern regul->2
+share->2
+energi need->3
+nuclear power plant->3

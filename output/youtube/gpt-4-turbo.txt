@@ -1,0 +1,60 @@
+comment->1
+help you out->1
+subscrib->1
+fade->0
+super->0
+check->1
+click->1
+link->1
+view->0
+youtub->1
+check out->1
+my channel->1
+http->1
+shuffl->0
+channel->1
+pleas->1
+suscrib->1
+ytma->1
+share->1
+win->1
+song->0
+join->1
+money->1
+best->0
+rapper->0
+leav a like->1
+post the name->1
+broken->0
+eleph->0
+horn->0
+video->1
+book->1
+read->1
+repass->1
+keep it up->0
+music channel->1
+thumb thi up->1
+go->1
+birthday->0
+happi birthday->0
+charli->0
+lost->0
+chanel->1
+sub->1
+adsens->0
+pay->0
+buy view->0
+hack->0
+playlist->1
+awsom->0
+lyric->0
+makeup->0
+phenomena->0
+eminem->0
+rock->0
+latest movi->1
+site->1
+visit->1
+miss->0
+die->0

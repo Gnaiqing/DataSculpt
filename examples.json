@@ -581,33 +581,13 @@
       "explanation": "The sentence says Marley is Hanaki's little sister, thus they are not spouses."
     },
     {
-      "idx": 6,
-      "data": "Williams and Ven Veen arrived at the ranch earlier in the week , where they held a welcome party for their guests Thursday . Are Williams and Ven Veen spouses?",
-      "label": 0,
-      "regex": "{{A}} and {{B}}",
-      "explanation": "The sentence only says Williams and Ven Veen held a welcome party together. It does not contain enough information to tell whether they are spouses."
-    },
-    {
-      "idx": 64,
-      "data": "Alana , 10 , dropped her first single , Movin  Up , on Monday  The video for the song features viral video artist Adam Barta , who also helped her to write the song  TLC reality series Here Comes Honey Boo Boo was canceled over a year ago over claims Mama June s ex molested her daughter Anna in 2002  Here Comes Honey Boo Boo has been canceled for nearly a year , but former TLC reality star Alana Thompson has already found a new focus for her energies having recently launched her music career with the debut of her new rap video . Are Movin and Anna spouses?",
-      "label": 0,
-      "regex": "None",
-      "explanation": "The sentence tells us Movin Up is Alana's first single, therefore there is no spouse relationship between Alana and Movin."
-    },
-    {
       "idx": 279,
       "data": "Hunter ( left ) was killed in a tragic  accident  , a spokeswoman for his father Eddie Montgomery ( right ) said  Davara Little , his ex - fiancée and mother of his four - month - old son , posted a touching message on her Facebook page saying :  Hunter gave me the greatest gift a man can give to a woman and no matter what happened to Hunter and I and where our relationship was going , I will forever be grateful for the sweet boy we have together .  Are hunter and Eddie Montgomery spouses?",
       "label": 0,
       "regex": "{{A}}.{0,50}father.{0,20}{{B}}",
       "explanation": "The sentence says Eddie Montgomery is Hunter's father, therefore they are not spouses."
     },
-    {
-      "idx": 532,
-      "data": "More executions this week – Two more death row inmates are scheduled to die this week On Wednesday Richard Glossip 52 faces death by lethal injection in Oklahoma for the 1997 murder of a motel owner a crime he denies committing A campaign to save him has drawn the support of a number of celebrities including actress Susan Sarandon and billionaire Richard Branson On Thursday Virginia is scheduled to put to death Alfredo Prieto a Salvadoran immigrant who was convicted of three murders and linked to six others His lawyers say he is mentally handicapped and should be spared the death penalty On Tuesday the Inter - American Human Rights Commission a body of the Organization of American States called for a stay of execution. Are Richard Glossip and Richard Branson spouses?",
-      "label": 0,
-      "regex": "None",
-      "explanation": "The sentence does not indicate that Richard Glossip and Richard Branson are spouses."
-    },
+
     {
       "idx": 942,
       "data": "Alexa PenaVega and Carlos PenaVega will be the first married couple to compete on a season of  Dancing with the Stars . Are Alexa PenaVega and Carlos PenaVega spouses?",

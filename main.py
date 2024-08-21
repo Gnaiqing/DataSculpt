@@ -2,7 +2,7 @@ import argparse
 from data_utils import load_wrench_data
 from sampler import get_sampler
 from lf_agent import get_lf_agent
-from lf_family import create_label_matrix
+from lf_family import create_label_matrix, KeywordLF, RegexLF
 from label_model import get_wrench_label_model, is_valid_snorkel_input
 from end_model import train_disc_model
 from wrench.search import grid_search
@@ -13,6 +13,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import wandb
 import pprint
+import os
 from pathlib import Path
 
 
@@ -23,8 +24,7 @@ def main(args):
                                                                   stopwords=args.stop_words,
                                                                   stemming=args.stemming,
                                                                   max_ngram=args.max_ngram,
-                                                                  revert_index=args.lf_type == "keyword",
-                                                                  append_cdr=args.append_cdr)
+                                                                  revert_index=args.lf_type=="keyword")
 
     print(f"Dataset path: {args.dataset_path}, name: {args.dataset_name}")
     print_dataset_stats(train_dataset, split="train")
@@ -34,23 +34,47 @@ def main(args):
     if args.save_wandb:
         group_id = wandb.util.generate_id()
         config_dict = vars(args)
-        config_dict["method"] = "LLMDP"
+        config_dict["method"] = "DataSculpt"
         config_dict["group_id"] = group_id
-
-    if args.dataset_name == "medical_abstract_unique":
-        args.dataset_name = "medical_abstract"
 
     rng = np.random.default_rng(args.seed)
     for run in range(args.runs):
         if args.save_wandb:
             wandb.init(
-                project="LLMDP",
+                project="DataSculpt",
                 config=config_dict
             )
 
-        if args.lf_agent == "wrench":
+        if args.lf_agent == "wrench" or args.lf_agent == "file":
+
             seed = rng.choice(10000)
             # use the LFs provided by wrench
+            if args.lf_agent == "file":
+                assert args.load_lf is not None
+                # load LFs from file
+                lf_path = Path(args.load_lf)
+                lfs = []
+                with open(lf_path, "r") as infile:
+                    for line in infile:
+                        line = line.strip()
+                        if line == "":
+                            continue
+                        if args.lf_type == "keyword":
+                            keyword, label = line.split("->")
+                            lf = KeywordLF(keyword, int(label))
+                        elif args.lf_type == "regex":
+                            regex, label = line.split("->")
+                            lf = RegexLF(regex, int(label))
+                        else:
+                            raise ValueError("Invalid LF type")
+
+                        lfs.append(lf)
+
+                L_train = create_label_matrix(train_dataset, lfs)
+                L_val = create_label_matrix(valid_dataset, lfs)
+                train_dataset.weak_labels = L_train.tolist()
+                valid_dataset.weak_labels = L_val.tolist()
+
             L_train = np.array(train_dataset.weak_labels)
             train_labels = np.array(train_dataset.labels)
             lf_train_stats = evaluate_lfs(train_labels, L_train, n_class=train_dataset.n_class)
@@ -76,6 +100,13 @@ def main(args):
             train_covered_indices = (np.max(L_train, axis=1) != -1) & (ys_tr != -1)  # indices covered by LFs
             ys_tr[~train_covered_indices] = -1
             train_label_stats = evaluate_labels(train_labels, ys_tr, n_class=train_dataset.n_class)
+
+            if args.default_class is not None:
+                # add default class for non-covered data
+                ys_tr[~train_covered_indices] = args.default_class
+                ys_tr_soft[~train_covered_indices, :] = 0.0
+                ys_tr_soft[~train_covered_indices, args.default_class] = 1.0
+                train_covered_indices = np.repeat(True, len(train_dataset))
 
             # train end model
             xs_tr = train_dataset.features[train_covered_indices, :]
@@ -107,20 +138,11 @@ def main(args):
 
             continue
 
+
         seed = rng.choice(10000)
-        values, counts = np.unique(valid_dataset.labels, return_counts=True)
-        class_balance = counts / len(valid_dataset)
+
         sampler = get_sampler(train_dataset=train_dataset,
                               sampler_type=args.sampler,
-                              embedding_model=args.embedding_model,
-                              distance=args.distance,
-                              uncertain_metric=args.uncertain_metric,
-                              k=args.neighbor_num,
-                              alpha=args.alpha,
-                              beta=args.beta,
-                              gamma=args.gamma,
-                              class_balance=class_balance,
-                              seed=seed,
                               index_path=Path(args.dataset_path) / args.dataset_name / "train_index_unigram.json"
                               )
 
@@ -130,6 +152,7 @@ def main(args):
                                 dataset_name=args.dataset_name,
                                 # LLM prompt arguments
                                 model=args.lf_llm_model,
+                                api_key=args.api_key,
                                 example_per_class=args.example_per_class,
                                 example_selection=args.example_selection,
                                 return_explanation=args.return_explanation,
@@ -152,8 +175,6 @@ def main(args):
         disc_model = None
         L_train = None
         L_val = None
-        best_valid_perf = 0.0
-        tolerance = 0
         searched_paras = {}
         lfs = []
         gt_labels = []
@@ -240,8 +261,6 @@ def main(args):
                 lf_labels = [lf.label for lf in lfs]
                 gt_train_labels = np.array(train_dataset.labels)
                 lf_train_stats = evaluate_lfs(gt_train_labels, L_train, np.array(lf_labels), n_class=train_dataset.n_class)
-                gt_valid_labels = np.array(valid_dataset.labels)
-                lf_val_stats = evaluate_lfs(gt_valid_labels, L_val, np.array(lf_labels), n_class=valid_dataset.n_class)
 
                 if args.tune_metric == "f1":
                     metric = "f1_binary" if train_dataset.n_class == 2 else "f1_macro"
@@ -267,18 +286,18 @@ def main(args):
                 ys_val = label_model.predict(L_val)
                 valid_covered_indices = (np.max(L_val, axis=1) != -1) & (ys_val != -1)  # indices covered by LFs
 
-                if args.default_class is None:
-                    ys_tr[~train_covered_indices] = -1
-                    ys_val[~valid_covered_indices] = -1
-                else:
-                    ys_tr[~train_covered_indices] = args.default_class
-                    ys_val[~valid_covered_indices] = args.default_class
-                    train_covered_indices = np.repeat(True, len(train_dataset))
-
                 # evaluate label quality
+                ys_tr[~train_covered_indices] = -1
+                ys_val[~valid_covered_indices] = -1
                 response_acc = accuracy_score(gt_labels, response_labels)
                 train_label_stats = evaluate_labels(gt_train_labels, ys_tr, n_class=train_dataset.n_class)
-                valid_label_stats = evaluate_labels(gt_valid_labels, ys_val, n_class=valid_dataset.n_class)
+
+                if args.default_class is not None:
+                    ys_tr[~train_covered_indices] = args.default_class
+                    ys_val[~valid_covered_indices] = args.default_class
+                    ys_tr_soft[~train_covered_indices, :] = 0.0
+                    ys_tr_soft[~train_covered_indices, args.default_class] = 1.0
+                    train_covered_indices = np.repeat(True, len(train_dataset))
 
                 # train end model
                 xs_tr = train_dataset.features[train_covered_indices, :]
@@ -300,12 +319,8 @@ def main(args):
                     test_stats = evaluate_labels(gt_test_labels, test_preds, n_class=test_dataset.n_class)
                     test_perf = evaluate_disc_model(disc_model, test_dataset)
 
-                    valid_preds = disc_model.predict(valid_dataset.features)
-                    valid_stats = evaluate_labels(gt_valid_labels, valid_preds, n_class=valid_dataset.n_class)
-
                 else:
                     test_perf = {"acc": np.nan, "f1": np.nan, "auc": np.nan}
-                    valid_stats = {}
                     test_stats = {}
 
                 cur_result = {
@@ -320,19 +335,6 @@ def main(args):
                     "test_f1": test_perf["f1"],
                     "test_auc": test_perf["auc"]
                 }
-                if args.early_stop:
-                    if args.tune_metric == "f1":
-                        valid_perf = valid_stats["f1"]
-                    else:
-                        valid_perf = valid_stats["acc"]
-                    if valid_perf > best_valid_perf:
-                        best_valid_perf = valid_perf
-                        tolerance = 0
-                    else:
-                        tolerance += 1
-                        if tolerance >= 3:
-                            break
-
                 if args.save_wandb:
                     wandb.log(cur_result)
 
@@ -340,48 +342,20 @@ def main(args):
                     print(f"After {t+1} iterations:")
                     print("Train LF stats:")
                     pprint.pprint(lf_train_stats)
-                    print("Valid LF stats:")
-                    pprint.pprint(lf_val_stats)
                     print("Train label stats (label model output):")
                     pprint.pprint(train_label_stats)
-                    print("Valid label stats (label model output):")
-                    pprint.pprint(valid_label_stats)
-                    print("Valid prediction stats (end model output):")
-                    pprint.pprint(valid_stats)
                     print("Test prediction stats (end model output):")
                     pprint.pprint(test_stats)
 
+        if args.save_lf is not None:
+            save_lf_path = f"output/{args.dataset_name}/"
+            os.makedirs(save_lf_path, exist_ok=True)
+            filepath = os.path.join(save_lf_path, f"{args.lf_llm_model}_{run}.txt")
+            with open(filepath, "w") as outfile:
+                for lf in lfs:
+                    outfile.write(lf.info() + "\n")
+
         if args.save_wandb:
-            wandb.run.summary["num_query"] = t+1
-            wandb.run.summary["lf_num"] = len(lfs)
-            wandb.run.summary["response_acc"] = response_acc
-            response_freq = np.mean(np.array(response_labels) != -1)
-            wandb.run.summary["response_freq"] = response_freq
-
-            if len(lfs) > 0:
-                wandb.run.summary["lf_acc_avg"] = lf_train_stats["lf_acc_avg"]
-                wandb.run.summary["lf_cov_avg"] = lf_train_stats["lf_cov_avg"]
-                wandb.run.summary["lf_overlap_avg"] = lf_train_stats["lf_overlap_avg"]
-                wandb.run.summary["lf_conflict_avg"] = lf_train_stats["lf_conflict_avg"]
-            else:
-                wandb.run.summary["lf_acc_avg"] = np.nan
-                wandb.run.summary["lf_cov_avg"] = np.nan
-            if label_model is not None:
-                wandb.run.summary["train_precision"] = train_label_stats["accuracy"]
-                wandb.run.summary["train_coverage"] = train_label_stats["coverage"]
-            else:
-                wandb.run.summary["train_precision"] = np.nan
-                wandb.run.summary["train_coverage"] = np.nan
-
-            if disc_model is not None:
-                wandb.run.summary["test_acc"] = test_perf["acc"]
-                wandb.run.summary["test_f1"] = test_perf["f1"]
-                wandb.run.summary["test_auc"] = test_perf["auc"]
-            else:
-                wandb.run.summary["test_acc"] = np.nan
-                wandb.run.summary["test_f1"] = np.nan
-                wandb.run.summary["test_auc"] = np.nan
-
             wandb.finish()
 
 
@@ -393,17 +367,9 @@ if __name__ == '__main__':
     parser.add_argument("--feature-extractor", type=str, default="bert", help="feature for training end model")
     parser.add_argument("--stop-words", type=str, default=None)
     parser.add_argument("--stemming", type=str, default="porter")
-    parser.add_argument("--append-cdr", action="store_true", help="append cdr snippets to original dataset")
     # sampler
-    parser.add_argument("--sampler", type=str, default="passive", choices=["passive", "uncertain", "QBC", "SEU", "weighted"],
+    parser.add_argument("--sampler", type=str, default="passive", choices=["passive", "uncertain", "QBC", "SEU"],
                         help="sample selector")
-    parser.add_argument("--embedding-model", type=str, default="all-MiniLM-L12-v2")
-    parser.add_argument("--distance", type=str, default="cosine")
-    parser.add_argument("--uncertain-metric", type=str, default="entropy")
-    parser.add_argument("--neighbor-num", type=int, default=10, help="neighbor count in KNN")
-    parser.add_argument("--alpha", type=float, default=1.0, help="trade-off factor for uncertainty. ")
-    parser.add_argument("--beta", type=float, default=1.0, help="trade-off factor for class balance. ")
-    parser.add_argument("--gamma", type=float, default=1.0, help="trade-off factor for distance to labeled set.")
     # data programming
     parser.add_argument("--label-model", type=str, default="Snorkel", choices=["Snorkel", "MeTaL", "MV"], help="label model used in DP paradigm")
     parser.add_argument("--use-soft-labels", action="store_true", help="set to true if use soft labels when training end model")
@@ -413,7 +379,7 @@ if __name__ == '__main__':
     parser.add_argument("--tune-end-model", type=bool, default=True, help="tune end model hyperparameters")
     parser.add_argument("--tune-metric", type=str, default="acc", help="evaluation metric used to tune model hyperparameters")
     # label function
-    parser.add_argument("--lf-agent", type=str, default="chatgpt", choices=["chatgpt", "llama-2", "wrench"], help="agent that return candidate LFs")
+    parser.add_argument("--lf-agent", type=str, default="chatgpt", choices=["chatgpt", "llama-2", "wrench", "file"], help="agent that return candidate LFs")
     parser.add_argument("--lf-type", type=str, default="keyword", choices=["keyword", "regex"], help="LF family")
     parser.add_argument("--lf-filter", type=str, nargs="+", default=["acc", "overlap"], help="filters for LF verification")
     parser.add_argument("--lf-acc-threshold", type=float, default=0.6, help="LF accuracy threshold for verification")
@@ -421,7 +387,8 @@ if __name__ == '__main__':
     parser.add_argument("--max-lf-per-iter", type=int, default=100, help="Maximum LF num per interaction")
     parser.add_argument("--max-ngram", type=int, default=3, help="N-gram in keyword LF")
     # prompting method
-    parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo-0613")
+    parser.add_argument("--api-key", type=str, default=None, help="OpenAI API key")
+    parser.add_argument("--lf-llm-model", type=str, default="gpt-3.5-turbo")
     parser.add_argument("--example-per-class", type=int, default=1)
     parser.add_argument("--return-explanation", action="store_true")
     parser.add_argument("--example-selection", type=str, default="random", choices=["random", "neighbor"])
@@ -432,11 +399,12 @@ if __name__ == '__main__':
     parser.add_argument("--num-query", type=int, default=50, help="total selected samples")
     parser.add_argument("--train-iter", type=int, default=10, help="evaluation interval")
     parser.add_argument("--sleep-time", type=float, default=0, help="sleep time in seconds before each query")
-    parser.add_argument("--early-stop", action="store_true")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--save-wandb", action="store_true")
+    parser.add_argument("--save-lf", action="store_true", help="path to save LFs")
+    parser.add_argument("--load-lf", type=str, default=None, help="path to load LFs")
     args = parser.parse_args()
     main(args)
 

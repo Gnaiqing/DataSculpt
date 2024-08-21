@@ -1,32 +1,25 @@
 import os
 
 ### Constants
-data_root = "./data/wrench_data"
-relation_extraction_datasets = ("chemprot", "cdr", "spouse", "semeval")
-imbalanced_datasets = ("sms", "cdr", "spouse", "arxiv_abstract")
-multiclass_datasets = ("chemprot", "agnews", "trec", "medical_abstract")
+data_root = "/root/datasets"
+relation_extraction_datasets = ("spouse",)
+imbalanced_datasets = ("sms", "spouse")
+multiclass_datasets = ("agnews",)
 
 ### Modify the configurations below
 datasets = [
-    # "youtube",
-    # "sms",
-    # "imdb",
+    "youtube",
+    "sms",
+    "imdb",
     "yelp",
     "agnews",
-    "trec",
-    "medical_abstract",
-    "arxiv_abstract",
-    "chemprot",
-    "cdr",
     "spouse",
-    "semeval"
 ]
 
 samplers = [
     "passive",
     # "uncertain",
     # "SEU",
-    # "weighted"
 ]
 
 filters = [
@@ -36,13 +29,15 @@ filters = [
 ]
 
 acc = 0.6
-agent = "llama2"
+agent = "chatgpt"
 feature_extractor = "bert"
 evaluate_base_prompt = False  # base prompt
 evaluate_cot_prompt = False  # chain of thought
-evaluate_sc_prompt = True   # self-consistency
+evaluate_sc_prompt = True  # self-consistency
+evaluate_kate_prompt = False # kate prompt
 example_selection = "random"  # "random" or "neighbor"
-llm = "gpt-3.5-0613"  # "gpt-3.5-turbo-0613" or "gpt-4-0613"
+llm = "gpt-3.5-turbo"  # gpt-3.5-turbo, gpt-4-0613
+api_key = ""  # openai api key
 
 for dataset in datasets:
     for sampler in samplers:
@@ -60,18 +55,17 @@ for dataset in datasets:
             # base prompt
             cmd = f"python main.py --dataset-path {data_root} --dataset-name {dataset} --feature-extractor {feature_extractor} " \
                   f"--sampler {sampler} --lf-agent {agent} --lf-type {lf_type} --lf-acc-threshold {acc} --tune-metric {metric} " \
-                  f"--example-selection {example_selection} --lf-filter {lf_filter} --lf-llm-model {llm} " \
-                  f"--label-model Snorkel --display --save-wandb"
+                  f" --lf-filter {lf_filter} --lf-llm-model {llm} --label-model Snorkel --display --save-wandb --api-key {api_key}"
             if llm == "gpt-4-0613":
                 cmd += " --sleep-time 10"
 
-            if dataset in ["cdr", "spouse"]:
+            if dataset == "spouse":
                 # add default class for non-covered data
                 cmd += " --default-class 0"
 
             if evaluate_base_prompt:
-                print(cmd)
-                os.system(cmd)
+                print(cmd + " --save-lf")
+                os.system(cmd + " --save-lf")
 
             # chain of thought
             cot_cmd = cmd + " --return-explanation"
@@ -84,5 +78,11 @@ for dataset in datasets:
             if evaluate_sc_prompt:
                 print(sc_cmd)
                 os.system(sc_cmd)
+
+            # kate prompt
+            kate_cmd = sc_cmd + " --example-selection neighbor"
+            if evaluate_kate_prompt:
+                print(kate_cmd)
+                os.system(kate_cmd)
 
 

@@ -1,0 +1,178 @@
+irish republican armi->0
+northern ireland->0
+deadlock->0
+peac process->0
+googl->3
+microsoft->3
+beta test->3
+search softwar->3
+clint dempsey->1
+columbu crew->1
+gillett stadium->1
+pat noonan->1
+playoff game->1
+season->1
+japanes navi->0
+water off japan->0
+north korea->0
+pyongyang->0
+ambassador->0
+diplomat->0
+explos->0
+georg bush->0
+religi expert->0
+state capitol->0
+vote->0
+crude oil->2
+barrel->2
+fell->2
+price->2
+specul->2
+legal recogn->3
+tradit healer->3
+foreign minist->0
+car bomb->0
+bounti mutin->0
+british territori->0
+pitcairn island->0
+sex abus trial->0
+us elect->2
+diesel->2
+petrol->2
+ibm->3
+linux->3
+sco->3
+unix ip->3
+ziff davi->3
+code->3
+iraq->0
+elect->0
+interim prime minist->0
+violenc->0
+microsoft corp->3
+scott mcneali->3
+sun microsystem->3
+digit music->3
+download servic->3
+africa commiss->0
+roic->2
+stock->2
+equatori guinea->0
+mark thatcher->0
+alleg involv->0
+coup->0
+chip->3
+mobil devic->3
+treasuri price->2
+dollar->2
+euro->2
+inflat->2
+rate hike->2
+knick->1
+nazr moham->1
+block shot->1
+minut->1
+getaway car->0
+master plan->0
+port citi->0
+terror->0
+us environment group->0
+yucatan peninsula->0
+conserv project->0
+tropic forest->0
+isra govern->0
+peac plan->0
+west bank settlement->0
+demand growth->0
+violenc in iraq->0
+isra->0
+jenin->0
+palestinian->0
+armi->0
+gunfir->0
+occupi territori->0
+kobe bryant->1
+lo angel media->1
+shaquil->1
+teammat->1
+verbal bash->1
+auburn->1
+courtney taylor->1
+john vaughn->1
+southeastern confer->1
+ball->1
+hous major leader->0
+republican candid->0
+polit fundrais->0
+arena->1
+hip->1
+unit airlin->2
+wall street journal->2
+bankruptci judg->2
+concess->2
+employe->2
+id terrorist->3
+comput system->3
+at t corp->2
+internet telephon provid->2
+vonag->2
+price war->2
+residenti internet call->2
+attorney gener->2
+broker->2
+health insur industri->2
+exxon mobil->2
+consum->2
+retreat->2
+sell servic->2
+updat->3
+advertis app->3
+incompat->3
+coahuila->2
+daimlerchrysl->2
+mexican state->2
+assembl plant->2
+australian embassi->0
+deadli bomb->0
+milit->0
+raid->0
+suicid attack->0
+window oper system->2
+corpor contract->2
+fiscal quarter->2
+revenu growth->2
+softwar giant->3
+georg hw bush->0
+mideast peac->0
+prime minist->0
+toni blair->0
+motorola inc->3
+industri design->3
+mechan engin->3
+mobil phone->3
+annual cost->2
+bankruptci->2
+cut->2
+financ->2
+profit->2
+daili race form->1
+littl brown publish->1
+barri bond->1
+basebal->1
+homer->1
+miami dolphin->1
+ankl injuri->1
+game->1
+run back->1
+invest->2
+litig cost->2
+power compani->2
+quarterli profit->2
+writedown->2
+fanni mae->2
+share->2
+execut->2
+govern regul->2
+investor concern->2
+energi need->3
+nuclear power plant->3

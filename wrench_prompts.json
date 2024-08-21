@@ -1,0 +1,181 @@
+{
+  "youtube": [
+    {
+      "pos_label": 1,
+      "prompt": "Q: Does the following comment '[TEXT]', reference the speaker's channel or video? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "Q: Does the following comment '[TEXT]' ask you to subscribe to a channel? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "Q: Does the following comment '[TEXT]' have a URL? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "Q: Does the following comment '[TEXT]' ask the reader to do something? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "Q: Does the following comment '[TEXT]' talk about a song? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "Q: Does the following comment '[TEXT]' contain the words 'check out'? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "Q: Is the following comment '[TEXT]' fewer than 5 words? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "Q: Does the following comment '[TEXT]' mention a person's name? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "Q: Does the following comment '[TEXT]' express a very strong sentiment? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "Q: Does the following comment '[TEXT]' express a subjective opinion? (Yes or No) \nA:"
+    }
+  ],
+  "spouse": [
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: Is there any mention of 'spouse' between the entities [ENTITY1] and [ENTITY2]? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: Is there any mention of 'spouse' before the entity [ENTITY1]? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: Is there any mention of 'spouse' before the entity [ENTITY2]? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: Do [ENTITY1] and [ENTITY2] have the same last name? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: Did [ENTITY1] and [ENTITY2] get married? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "'[TEXT]'\nQ: Are [ENTITY1] and [ENTITY2] faimily members? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "'[TEXT]'\nQ: Is [ENTITY1] said to be a faimily member? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "'[TEXT]'\nQ: Is [ENTITY2] said to be a faimily member? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "'[TEXT]'\nQ: Are [ENTITY1] and [ENTITY2] dating? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "'[TEXT]'\nQ: Are [ENTITY1] and [ENTITY2] co-workers? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "'[TEXT]'\nQ: are [ENTITY1] and [ENTITY2] married? (Yes or No) \nA:"
+    }
+  ],
+  "sms": {
+    "positive_keywords": "??1.50, ??500, ??5000, call for offer, cash prize, chat date, chat to, childporn, credits, dating call, direct, expires now, fantasies call, free phones, free price, free ringtones, free sex, free tone, guaranteed free, guaranteed gift, hard live girl, important lucky, inviting friends, latest, latest offer, message call, new mobiles, no extra, password, please call, sms reply, unlimited calls, urgent award guaranteed, urgent prize, voucher claim, welcome reply, win shopping, winner reward, won call, won cash, won cash prize, won claim",
+    "negative_keywords": "I, I can did, I it, I miss, I used to, adventuring, amrita, can’t talk, did u got, do you, fb, goodo, hee hee, i’ll, jus, link, maggi, mine, my kids, noisy, praying, shit, should I, thanks, that’s fine, thats nice, u how 2, we will, where are, wtf, your I",
+    "prompt": "Q: Does the following text message '[TEXT]' contain the words '[KEYWORDS]'? (Yes or No)\nA:"
+  },
+  "imdb": [
+    {
+      "pos_label": 1,
+      "prompt": "[TEXT]\nQ: Does the above comment express that the commenter would like to watch the movie again? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter says the movie is worse than other movies in the above comment? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "[TEXT]\nQ: Does the commenter praise the movie using positive words such as 'masterpiece', 'perfect', 'good', etc.? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter criticize the movie using negative words such as 'bad', 'worst', 'awful', etc.? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter says the they cannot finish the movie or have to fast forward? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "[TEXT]\nQ: Does the commenter thinks the movie has well written and attractive plots? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter says the movie has boring and dull plots? (Yes or No) \nA:"
+    }
+  ],
+  "yelp": [
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the above comment express that the commenter has a positive experience in the restaurant? (Yes,No,Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter recommend the restaurant in the above comment? (Yes,No,Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Is the commenter satisfied with the experience? (Yes,No,Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter think the restaurant has good services? (Yes, No, Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter think the restaurant has good food? (Yes, No, Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter think the restaurant has good atmosphere? (Yes, No, Neutral) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "neg_label": 0,
+      "prompt": "[TEXT]\nQ: Does the commenter think the restaurant has cheap prices? (Yes, No, Neutral) \nA:"
+    }
+  ],
+  "agnews": [
+    {
+      "pos_label": 0,
+      "prompt": "[TEXT]\nQ: Does the above news related to international topics? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 1,
+      "prompt": "[TEXT]\nQ: Does the above news related to sports? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 2,
+      "prompt": "[TEXT]\nQ: Does the above news related to business? (Yes or No) \nA:"
+    },
+    {
+      "pos_label": 3,
+      "prompt": "[TEXT]\nQ: Does the above news related to science and technology? (Yes or No) \nA:"
+    }
+  ]
+}
+

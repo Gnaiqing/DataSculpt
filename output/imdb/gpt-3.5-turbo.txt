@@ -1,0 +1,109 @@
+amaz->1
+friend->1
+relationship->1
+bad->0
+campi->0
+special effect->0
+heartfelt->1
+thriller->1
+lack->0
+mess->0
+ridicul->0
+uninspir->0
+fake->0
+enjoy->1
+perfect->1
+terrif->1
+disappoint->0
+potenti->0
+art->1
+favorit->1
+love->1
+deterior->0
+morbid->0
+bore->0
+worst->0
+genocid denial->0
+mislead->0
+propaganda->0
+addict->1
+crave->1
+well done->1
+espionag->1
+human drama->1
+perform->1
+spi->1
+beauti->1
+geniu->1
+romant->1
+aw->0
+fake costum->0
+poor->0
+stereotyp->0
+heartwarm->1
+dread->0
+overproduc->0
+inconsist->0
+predict->0
+affair->1
+matur->1
+provoc->1
+low budget->0
+stupid->0
+desper housew->1
+eva longoria->1
+fantast->1
+shock->0
+mangl->0
+strike out->0
+trainwreck->0
+epic->1
+excel->1
+period piec->1
+awesom->1
+spectacular->1
+horribl->0
+mediocr->0
+wors->0
+wast->0
+tire->0
+unfavor->0
+drivel->0
+plot->0
+clich->0
+horrend->0
+pain->0
+thinli plot->0
+unbeliev->0
+worst act->0
+doodlebop->1
+educ->1
+share->1
+vibrant->1
+disgust->0
+idiot->0
+natur locat->1
+explos->1
+evil->0
+nonsens->0
+gem->1
+great->1
+hilari->1
+laughter->1
+beauti film->1
+flawless->1
+endear->1
+touch->1
+beach archeri->0
+cowardic->0
+disgrac->0
+insult->0
+drama->1
+fan->1
+move->1
+solid->1
+accur->1
+excel writer->1
+great actor->1
+realist->1
+terribl->0

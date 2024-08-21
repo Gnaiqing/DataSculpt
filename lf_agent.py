@@ -5,6 +5,7 @@ import os
 from numpy.random import default_rng
 from lf_family import KeywordLF, RegexLF, create_label_matrix
 import openai
+from openai import OpenAI
 from gpt_utils import create_prompt, create_cot_prompt, create_cot_user_prompt, create_user_prompt, extract_response, build_example
 from sentence_transformers import SentenceTransformer
 from tenacity import (
@@ -12,7 +13,6 @@ from tenacity import (
     stop_after_attempt,
     wait_random_exponential,
 )  # for exponential backoff
-
 from data_utils import preprocess_text
 import nltk
 import re
@@ -20,9 +20,7 @@ import time
 
 
 def get_lf_agent(train_dataset, valid_dataset, agent_type, **kwargs):
-    if agent_type == "simulated":
-        return SimLFAgent(train_dataset, valid_dataset, **kwargs)
-    elif agent_type == "chatgpt":
+    if agent_type == "chatgpt":
         return ChatGPTLFAgent(train_dataset, valid_dataset, **kwargs)
     elif agent_type == "llama2":
         return LLama2LFAgent(train_dataset, valid_dataset, **kwargs)
@@ -338,11 +336,12 @@ class LLama2LFAgent:
 
 
 @retry(wait=wait_random_exponential(min=10, max=60), stop=stop_after_attempt(6))
-def completion_with_backoff(sleep_time=0, **kwargs):
+def completion_with_backoff(client, sleep_time=0, **kwargs):
     if sleep_time > 0:
         time.sleep(sleep_time)
 
-    return openai.ChatCompletion.create(**kwargs)
+    completion = client.chat.completions.create(**kwargs)
+    return completion
 
 
 class ChatGPTLFAgent:
@@ -357,8 +356,9 @@ class ChatGPTLFAgent:
         self.valid_dataset = valid_dataset
         self.kwargs = kwargs
         # API related arguments
+        self.client = OpenAI(api_key=kwargs["api_key"])
         self.model = kwargs.get("model", "gpt-3.5-turbo")
-        openai.api_key_path = kwargs.get("api_key_path", "openai-api.key")
+        # openai.api_key_path = kwargs.get("api_key_path", "openai-api.key")
         self.example_per_class = kwargs.get("example_per_class", 1)
         self.example_selection = kwargs.get("example_selection", "random")
         if self.example_selection == "neighbor":
@@ -406,6 +406,7 @@ class ChatGPTLFAgent:
             print("ChatGPT system prompt:")
             print(self.system_prompt)
             print("Example prompt:")
+            print(self.example_prompt)
 
 
 
@@ -426,6 +427,7 @@ class ChatGPTLFAgent:
                 ]
 
                 response = completion_with_backoff(
+                    self.client,
                     sleep_time=self.sleep_time,
                     model=self.model,
                     messages=messages,
@@ -433,9 +435,8 @@ class ChatGPTLFAgent:
                     temperature=self.temperature,
                     n=self.n_completion
                 )
-
-                response_content = response['choices'][0]["message"]["content"]
-
+                response_content = response.choices[0].message.content
+                # response_content = response['choices'][0]["message"]["content"]
                 response_dict = extract_response(response_content)
                 if self.lf_type == "keyword" and response_dict["keyword_list"] is not None and len(response_dict["keyword_list"]) > 0:
                     cur_examples += 1
@@ -461,6 +462,7 @@ class ChatGPTLFAgent:
             label, keyword_list = None, []
 
             response = completion_with_backoff(
+                self.client,
                 sleep_time=self.sleep_time,
                 model=self.model,
                 messages=messages,
@@ -471,7 +473,8 @@ class ChatGPTLFAgent:
 
             output_labels = []
             for j in range(self.n_completion):
-                response_content = response['choices'][j]["message"]["content"]
+                response_content = response.choices[0].message.content
+                # response_content = response['choices'][j]["message"]["content"]
                 if self.display:
                     print("Response {}: {}\n".format(j, response_content))
 
@@ -504,6 +507,7 @@ class ChatGPTLFAgent:
             label, regex_list = None, []
 
             response = completion_with_backoff(
+                self.client,
                 sleep_time=self.sleep_time,
                 model=self.model,
                 messages=messages,
@@ -514,7 +518,8 @@ class ChatGPTLFAgent:
 
             output_labels = []
             for j in range(self.n_completion):
-                response_content = response['choices'][j]["message"]["content"]
+                # response_content = response['choices'][j]["message"]["content"]
+                response_content = response.choices[j].message.content
                 if self.display:
                     print("Response {}: {}\n".format(j, response_content))
                 response_dict = extract_response(response_content)
@@ -561,60 +566,6 @@ class ChatGPTLFAgent:
             else:
                 self.L_train = np.hstack((self.L_train, weak_labels))
 
-            for lf in filtered_lfs:
-                self.lfs.append(lf)
-
-        return filtered_lfs
-
-
-class SimLFAgent:
-    def __init__(self, train_dataset, valid_dataset, lf_type="keyword", filter_methods=("acc", "unique"),
-                 acc_threshold=0.6, seed=0, **kwargs):
-        """
-        Simulated LF Agent that return a LF with accuracy above threshold
-        :param train_dataset: unlabeled training set
-        :param valid_dataset: validation set
-        :param lf_type: type of LF that the agent returns
-        :param filter_methods:
-                "acc": LF accuracy is above threshold
-                "sentiment" : the keyword has corresponding sentiment
-                "unique" : the LF was not returned in previous iterations
-                "consist" : the LF is accurate on corresponding development instance
-        :param acc_threshold: threshold for LF accuracy
-        :param data_root:
-        :param repeat: whether the agent may return the same LF multiple times
-        :param seed: random seed
-        """
-        self.train_dataset = train_dataset
-        self.valid_dataset = valid_dataset
-        self.lf_type = lf_type
-        self.filter_methods = filter_methods
-        self.lfs = list() # history LFs
-        self.acc_threshold = acc_threshold
-        self.rng = default_rng(seed)
-        self.max_lf_per_iter = kwargs.get("max_lf_per_iter", 1)
-
-    def create_lf(self, query_idx):
-        item = self.train_dataset.examples[query_idx]["text"]
-        label = self.train_dataset.labels[query_idx]
-        tokens = nltk.word_tokenize(item.lower())
-        candidate_lfs = []
-        if self.lf_type == "keyword":
-            for token in tokens:
-                lf = KeywordLF(keyword=token, label=label)
-                candidate_lfs.append(lf)
-        else:
-            raise ValueError("LF Type not supported.")
-
-        filtered_lfs = filter_candidate_lfs(candidate_lfs, self.filter_methods, self.train_dataset, self.valid_dataset,
-                                            self.acc_threshold, self.lfs)
-
-        if self.max_lf_per_iter is not None and self.max_lf_per_iter < len(filtered_lfs):
-            filtered_lfs = self.rng.choice(filtered_lfs, size=self.max_lf_per_iter, replace=False)
-
-        if len(filtered_lfs) == 0:
-            filtered_lfs = [KeywordLF("none", label)]
-        else:
             for lf in filtered_lfs:
                 self.lfs.append(lf)
 

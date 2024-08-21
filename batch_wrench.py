@@ -6,14 +6,10 @@ datasets = [
     "imdb",
     "yelp",
     "agnews",
-    "trec",
-    "chemprot",
-    "cdr",
-    "spouse",
-    "semeval"
+    "spouse"
 ]
 
-imbalanced_datasets = ["sms", "cdr", "spouse"]
+imbalanced_datasets = ["sms", "spouse"]
 label_models = ["Snorkel"]
 end_models = ["logistic"]
 

@@ -1,0 +1,72 @@
+comment->1
+spammer->1
+subscrib->1
+suck->1
+fade->1
+fuck->1
+youtub->1
+check->1
+video->1
+megan fox->0
+never get old->0
+song->0
+protect->0
+nice->0
+artist->1
+dream->1
+fan->1
+good->1
+music->1
+support->1
+love->0
+channel->1
+feedback->1
+rapper->1
+site->1
+bangladesh->0
+christma->1
+cope->1
+dad->1
+lyric->1
+pictur->1
+thumb up->1
+video view->1
+write->1
+watch->0
+best->0
+rap->0
+oreo->0
+2012->1
+bitch->1
+billion->0
+1billion->1
+new song->1
+famou->1
+inbox->1
+spam bot->1
+hate->1
+opportun->1
+kati perri->0
+autotun->0
+sing->0
+facebook->1
+expans->1
+hilari->1
+home->1
+metal->1
+money->1
+onlin->1
+reflect->1
+smoke->1
+websit->1
+produc->1
+remix->1
+eminem->1
+rant->1
+8bit->0
+oppon->1
+dissert->0
+finish->0
+laugh->0
+page->1
+fuckin->1

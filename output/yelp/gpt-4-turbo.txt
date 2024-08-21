@@ -1,0 +1,116 @@
+best->1
+cook to perfect->1
+delici->1
+realli happi->1
+tender->1
+cold->0
+dri->0
+less superior->0
+tepid->0
+cool->1
+execut to perfect->1
+great music->1
+highli recommend->1
+nice->1
+bare->0
+bland->0
+slow->0
+stealthi->0
+ca stomach->0
+fall apart->0
+filthi->0
+great->1
+bewar->0
+question->0
+attitud->0
+mediocr->0
+not good->0
+no apolog->0
+poor->0
+shrug->0
+worst->0
+wrong->0
+aw->0
+never->0
+clean->1
+great servic->1
+reason price->1
+tasti->1
+love->1
+relax->1
+disgust->0
+not the best->0
+disappoint->0
+gross->0
+not come back->0
+unexcit->0
+wateri->0
+ruin->0
+yell->0
+rude->0
+empti->0
+ghetto->0
+suck->0
+not->0
+food poison->0
+no bueno->0
+epic fail->0
+horribl->0
+conveni->1
+friendli->1
+veri littl problem->1
+blech->0
+never again->0
+veri good condit->1
+veri help->1
+incorrect->0
+not go back->0
+best place->1
+exceed expect->1
+luxuri->1
+big fan->1
+enjoy->1
+realli like->1
+did like->0
+ok->0
+water down->0
+cheat->0
+inconveni->0
+lie->0
+refus->0
+favorit->1
+risk->0
+amaz->1
+gorgeou->1
+perfect->1
+unprofession->0
+fun->1
+pleasur->1
+fantast->1
+embarrass->0
+mess up->0
+soak->0
+great experi->1
+recommend->1
+realli good->1
+incred->1
+welcom->1
+awesom->1
+happi->1
+idiot->0
+ignor->0
+cockroach->0
+dissatisfi->0
+not enough option->0
+ordinari->0
+sloppi->0
+lousi->0
+overr->0
+wait->0
+courteou->1
+beauti->1
+class->1
+stun->1
+surpris->1
+wait an hour->0
+all right->0

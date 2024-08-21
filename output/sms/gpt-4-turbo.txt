@@ -1,0 +1,104 @@
+sleep->0
+surf->0
+enjoy->0
+parti->0
+call later->0
+ca speak->0
+sure->0
+worri->0
+camera->1
+free->1
+mobil->1
+updat->1
+direct access->1
+per minut->1
+come->0
+smoke->0
+hip hop->0
+kg->0
+lose->0
+orchard->0
+bore->0
+home->0
+watch tv->0
+today plan->0
+inde->0
+deserv->0
+heart->0
+truth->0
+miss call->0
+tri call->0
+gud nyt->0
+thank->0
+sorri->0
+dollar->0
+pay->0
+drive->0
+gaze->0
+ladi->0
+men->0
+shorter->0
+disappoint->0
+shop->0
+fair->0
+stress->0
+bedrm->0
+price->0
+hook up->0
+meet->0
+pin->0
+ach->0
+loverboy->0
+queen->0
+speak->0
+babe->0
+love->0
+dad->0
+question->0
+work->0
+even->0
+matur->0
+understand->0
+claim->1
+jackpot->1
+membership->1
+prize->1
+urgent->1
+won->1
+good morn->0
+happi new year->0
+black pant->0
+wear->0
+great day->0
+wish->0
+contact->1
+date servic->1
+callcost->1
+class->0
+go back->0
+actual->0
+believ->0
+gastroenter->0
+ill->0
+malaria->0
+hi->0
+day->0
+opportun->0
+ador->0
+hear your voic->0
+fine->0
+get in->0
+amigo->0
+haha->0
+swing by->0
+appoint->0
+next weekend->0
+studi->0
+click->1
+credit->1
+link->1
+xxxmobilemovieclub->1
+camera phone->1
+half price->1
+deliv->0
+mate->0

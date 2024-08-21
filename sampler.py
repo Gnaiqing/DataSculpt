@@ -13,8 +13,6 @@ def get_sampler(train_dataset, sampler_type, **kwargs):
         return ActiveSampler(train_dataset, al_method=sampler_type, **kwargs)
     elif sampler_type == "SEU":
         return SEUSampler(train_dataset, **kwargs)
-    elif sampler_type == "weighted":
-        return WeightedScoreSampler(train_dataset, **kwargs)
     else:
         raise ValueError("Sampler not supported")
 

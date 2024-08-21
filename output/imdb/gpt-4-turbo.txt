@@ -1,0 +1,119 @@
+amaz->1
+great->1
+independ->1
+love->1
+masterpiec->1
+bad->0
+campi->0
+dreck->0
+predict->0
+skip it->0
+heartfelt->1
+humor->1
+laughter->1
+captiv->1
+masteri->1
+lack of imagin->0
+lack->0
+letdown->0
+uninspir->0
+spectacularli wrong->0
+enjoy->1
+perfect->1
+terrif->1
+disappoint->0
+beauti->1
+favorit->1
+corps->0
+deterior->0
+morbid->0
+bore->0
+rubbish->0
+worst->0
+genocid denial->0
+mislead->0
+pathet->0
+best->1
+must watch->1
+well done->1
+excel->1
+fantast->1
+fascin->1
+finest->1
+great perform->1
+strong->1
+classic->1
+geniu->1
+romant->1
+vibrant->1
+annoy->0
+aw->0
+poor->0
+stereotyp->0
+tire->0
+better portray->1
+heart warm->1
+neat->1
+hollywood sauc->0
+dread->0
+overproduc->0
+drag->0
+sickingli predict->0
+unbeliev->0
+discomfort->0
+shock->0
+low budget->0
+noth origin->0
+stupid->0
+unnecessari->0
+fail->0
+sorri choic->0
+strike out->0
+brilliant->1
+recommend->1
+awesom->1
+memor->1
+spectacular->1
+mediocr->0
+wors->0
+miss element->0
+not enough->0
+ridicul->0
+wast->0
+no energi->0
+unfavor->0
+drivel->0
+horrend->0
+horror->0
+pain->0
+disgust->0
+idiot->0
+sadden->0
+impress->1
+enhanc->1
+treasur->1
+lowest grade->0
+nonsens->0
+propaganda->0
+hilari->1
+strong perform->1
+beauti film->1
+flawless->1
+endear->1
+great fun->1
+touch->1
+thin->0
+appal->0
+disgrac->0
+insult->0
+emphas->1
+fan->1
+success->1
+favourit->1
+solid->1
+veri good->1
+avoid->0
+pain bad->0
+accur->1
+crapfest->0
+terribl->0
